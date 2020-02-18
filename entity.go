@@ -179,6 +179,10 @@ func ToBSON(entity interface{}) bson.M {
 
 		var fieldName string
 		if tag := field.Tag.Get(BSONTag); tag != "" {
+			// Skip "_id" field when encoding to BSON
+			if tag == "_id" {
+				continue
+			}
 			fieldName = tag
 		} else if tag := field.Tag.Get(JSONTag); tag != "" {
 			fieldName = tag
