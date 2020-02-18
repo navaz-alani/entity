@@ -131,6 +131,9 @@ an entity from a collection.
 
 The filter field is chosen with the following priority:
 BSON tag "_id", Axis tag "true" (then BSON, JSON tags)
+
+Note that the field with the BSON tag "_id" must be of
+type primitive.ObjectID so that comparison succeeds.
 */
 func Filter(entity interface{}) bson.M {
 	t := reflect.TypeOf(entity)
@@ -140,7 +143,7 @@ func Filter(entity interface{}) bson.M {
 		field := t.Field(i)
 		filterValue := v.Field(i).Interface()
 
-		if tag := field.Tag.Get(BSONTag); tag == "_id" && filterValue != "" {
+		if tag := field.Tag.Get(BSONTag); tag == "_id" && filterValue != primitive.NilObjectID {
 			return bson.M{"_id": filterValue}
 		} else if tag := field.Tag.Get(AxisTag); tag == "true" && filterValue != "" {
 			var filterFieldName string
@@ -248,6 +251,8 @@ func (e *Entity) Add(entity interface{}) (primitive.ObjectID, error) {
 		return nilID, fmt.Errorf(
 			"entity body incomplete; will not add (Axis Policy)")
 	}
+
+	// TODO: add check for whether the defined axis fields are unique
 
 	res, err := e.PStorage.InsertOne(context.TODO(), dbDoc)
 	if err != nil {
