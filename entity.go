@@ -100,7 +100,8 @@ const (
 		IndexTag is used for tagging fields whose index
 		needs to be created.
 	*/
-	IndexTag string = "index"
+	IndexTag    string = "index"
+	EntityIDTag string = "_id_"
 )
 
 /*
@@ -203,6 +204,11 @@ func ToBSON(entity interface{}) bson.M {
 Entity is a type which is used to store
 information about a collection of entities. It is
 used to manage Entities and ensure persistence.
+
+The SchemaDefinition field's contents is used to
+generate a validator for the collection. This is
+done using "validate" tags which allow deeper
+schema specification.
 */
 type Entity struct {
 	/*
@@ -213,6 +219,7 @@ type Entity struct {
 	/*
 		PStorage is the collection in which the Entities
 		should be maintained.
+		TODO: use "validate" tags for collection validator
 	*/
 	PStorage *mongo.Collection
 }
@@ -388,7 +395,7 @@ func (e *Entity) Optimize() {
 			indexType = "text"
 		}
 
-		keys = append(keys, bson.E{fieldName, indexType})
+		keys = append(keys, bson.E{Key: fieldName, Value: indexType})
 	}
 
 	index := []mongo.IndexModel{{Keys: keys}}
