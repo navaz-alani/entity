@@ -104,19 +104,12 @@ const (
 )
 
 /*
-EntityDefinition is a wrapper around the reflect.Type
-and is used to define the schema for the Entities to be
-collected in a collection.
-*/
-type EntityDefinition reflect.Type
-
-/*
 TypeOf returns an EntityDefinition which can be used with
 an Entity to define a schema.
 It performs a check to ensure that the entity is of kind
 struct.
 */
-func TypeOf(entity interface{}) EntityDefinition {
+func TypeOf(entity interface{}) reflect.Type {
 	entityType := reflect.TypeOf(entity)
 	if entityType.Kind() == reflect.Struct {
 		return entityType
@@ -209,7 +202,7 @@ type Entity struct {
 		SchemaDefinition is the base type which will be
 		used for this collection.
 	*/
-	SchemaDefinition EntityDefinition
+	SchemaDefinition reflect.Type
 	/*
 		PStorage is the collection in which the Entities
 		should be maintained.
