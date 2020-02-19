@@ -80,12 +80,12 @@ import (
 	"reflect"
 	"time"
 
-	"go.mongodb.org/mongo-driver/mongo/options"
-
-	"github.com/navaz-alani/entity/spec"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/navaz-alani/entity/spec"
 )
 
 const (
@@ -215,11 +215,7 @@ typeCheck verifies whether the entity can be used with the
 Entity ec.
 */
 func (e *Entity) typeCheck(entity interface{}) bool {
-	if TypeOf(entity) != e.SchemaDefinition {
-		return false
-	}
-
-	return true
+	return TypeOf(entity) == e.SchemaDefinition
 }
 
 /*
@@ -312,6 +308,8 @@ func (e *Entity) Exists(entity, dest interface{}) (bool, error) {
 			if err != nil {
 				return true, fmt.Errorf("failed to decode DB result")
 			}
+
+			return true, nil
 		}
 		return true, nil
 	}
@@ -381,7 +379,7 @@ func (e *Entity) Optimize() {
 			indexType = "text"
 		}
 
-		keys = append(keys, bson.E{fieldName, indexType})
+		keys = append(keys, bson.E{Key: fieldName, Value: indexType})
 	}
 
 	index := []mongo.IndexModel{{Keys: keys}}
