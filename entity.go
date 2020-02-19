@@ -21,7 +21,6 @@ collection indexes and creating Query/Update/Delete filters.
 The Axis Policy ensures data integrity by enforcing that all
 Entities within a collection have unique axis values.
 
-
 This Policy is especially useful when querying elements for
 Read/Update/Delete operations. The client benefits through the
 ability to specify whether a field is an axis, using the "axis"
@@ -38,9 +37,9 @@ For example, here is a hypothetical struct for defining
 a (useless) User Entity:
 
 	type User struct {
-		ID     primitive.ObjectID  `json:"-" bson:"_id"`
+		ID     primitive.ObjectID  `json:"-" bson:"_id" _id_:"user"`
 		Name   string              `json:"name" bson:"name"`
-		Email  string              `json:"email" bson:"email" axis:"true" index:""`
+		Email  string              `json:"email" bson:"email" axis:"true"`
 	}
 
 Next, register this User struct as an Entity.
@@ -70,6 +69,10 @@ this Entity definition and can lead to hundreds of lines of less
 code being written.
 The Entity package aims to (at least) provide a high level
 API with the basic CRUD boilerplate code already taken care of.
+
+See github.com/navaz-alani/entity/multiplexer for information about
+the EntityMux which is able to manage a collection of entities for
+larger applications.
 */
 package entity
 
@@ -100,8 +103,12 @@ const (
 		IndexTag is used for tagging fields whose index
 		needs to be created.
 	*/
-	IndexTag    string = "index"
-	EntityIDTag string = "_id_"
+	IndexTag string = "index"
+	/*
+		IDTag is used for providing Entity identifiers
+		for an EntityMux.
+	*/
+	IDTag string = "_id_"
 )
 
 /*
@@ -212,7 +219,6 @@ type Entity struct {
 	/*
 		PStorage is the collection in which the Entities
 		should be maintained.
-		TODO: use "validate" tags for collection validator
 	*/
 	PStorage *mongo.Collection
 }

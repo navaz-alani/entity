@@ -1,4 +1,8 @@
-package entityMux
+/*
+Package multiplexer defines an EntityMux type which is basically
+a multiplexer for Entity types.
+*/
+package multiplexer
 
 import (
 	"fmt"
@@ -12,11 +16,6 @@ import (
 
 /*
 EntityMux is a multiplexer for Entities.
-The multiplexer essentially creates a layer of
-abstraction over the database. Using the Type
-definition stored in the Entity, as well as struct
-field tags, the multiplexer is able to provide basic
-HTTP Handle functions for Entities.
 */
 type EntityMux struct {
 	/*
@@ -29,11 +28,11 @@ type EntityMux struct {
 }
 
 /*
-collection returns a pointer to the mongo collection
+Collection returns a pointer to the mongo collection
 that the entity identified by the given entityID is
 using.
 */
-func (em *EntityMux) collection(entityID string) *mongo.Collection {
+func (em *EntityMux) Collection(entityID string) *mongo.Collection {
 	return em.entities[entityID].PStorage
 }
 
@@ -56,26 +55,29 @@ func Create(db *mongo.Database, definitions []interface{}) (*EntityMux, error) {
 	for def := range definitions {
 		defType := reflect.TypeOf(def)
 
+		var collectionInitialized bool
 		/*
 			This block performs a linear search through the fields of this
-			def to find the first one with an EntityIDTag.
-			The field's EntityIDTag's value is used as the unique identifier
+			def to find the first one with a non-empty IDTag.
+			The field's IDTag's value is used as the unique identifier
 			for this def's Entity.
 
-			For efficiency, clients should always put the EntityIDTag as
+			For efficiency, clients should always put the IDTag as
 			the first field in a struct.
 		*/
 		for i := 0; i < defType.NumField(); i++ {
 			field := defType.Field(i)
 
-			if field.Name == entity.EntityIDTag {
-				collectionName, ok := reflect.ValueOf(def).Interface().(string)
-				if !ok || collectionName == "" {
-					return nil, fmt.Errorf("invalid '%s' type or zero value",
-						entity.EntityIDTag)
-				}
+			if tag := field.Tag.Get(entity.IDTag); tag != "" {
+				collectionName := tag
 
-				defCollection := db.Collection(collectionName)
+				var defCollection *mongo.Collection
+
+				if collectionOptions := collectionValidator(defType); collectionOptions != nil {
+					defCollection = db.Collection(collectionName, collectionOptions)
+				} else {
+					defCollection = db.Collection(collectionName)
+				}
 
 				defEntity := &entity.Entity{
 					SchemaDefinition: entity.TypeOf(def),
@@ -86,16 +88,20 @@ func Create(db *mongo.Database, definitions []interface{}) (*EntityMux, error) {
 					newMux.entities[collectionName] = defEntity
 				} else {
 					return nil, fmt.Errorf("duplicate '%s' tag on '%s'",
-						entity.EntityIDTag, defType.Name())
+						entity.IDTag, defType.Name())
 				}
 
 				defEntity.Optimize()
+
+				collectionInitialized = true
 				break
 			}
 		}
 
-		// entity registered, move on
-		continue
+		if !collectionInitialized {
+			return nil, fmt.Errorf("no '%s' tag on '%s'",
+				entity.IDTag, defType.Name())
+		}
 	}
 
 	return newMux, nil
@@ -107,5 +113,6 @@ tags for the struct and create a collection validator to
 be used for this struct.
 */
 func collectionValidator(_ reflect.Type) *options.CollectionOptions {
+	// TODO: implement collection validator
 	return nil
 }
