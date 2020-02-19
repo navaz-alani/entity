@@ -80,12 +80,12 @@ import (
 	"reflect"
 	"time"
 
-	"go.mongodb.org/mongo-driver/mongo/options"
-
-	"github.com/navaz-alani/entity/spec"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/navaz-alani/entity/spec"
 )
 
 const (
@@ -105,19 +105,12 @@ const (
 )
 
 /*
-EntityDefinition is a wrapper around the reflect.Type
-and is used to define the schema for the Entities to be
-collected in a collection.
-*/
-type EntityDefinition reflect.Type
-
-/*
 TypeOf returns an EntityDefinition which can be used with
 an Entity to define a schema.
 It performs a check to ensure that the entity is of kind
 struct.
 */
-func TypeOf(entity interface{}) EntityDefinition {
+func TypeOf(entity interface{}) reflect.Type {
 	entityType := reflect.TypeOf(entity)
 	if entityType.Kind() == reflect.Struct {
 		return entityType
@@ -215,7 +208,7 @@ type Entity struct {
 		SchemaDefinition is the base type which will be
 		used for this collection.
 	*/
-	SchemaDefinition EntityDefinition
+	SchemaDefinition reflect.Type
 	/*
 		PStorage is the collection in which the Entities
 		should be maintained.
@@ -229,11 +222,7 @@ typeCheck verifies whether the entity can be used with the
 Entity ec.
 */
 func (e *Entity) typeCheck(entity interface{}) bool {
-	if TypeOf(entity) != e.SchemaDefinition {
-		return false
-	}
-
-	return true
+	return TypeOf(entity) == e.SchemaDefinition
 }
 
 /*
@@ -326,6 +315,8 @@ func (e *Entity) Exists(entity, dest interface{}) (bool, error) {
 			if err != nil {
 				return true, fmt.Errorf("failed to decode DB result")
 			}
+
+			return true, nil
 		}
 		return true, nil
 	}
