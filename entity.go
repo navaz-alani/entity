@@ -109,6 +109,11 @@ const (
 		for an EntityMux.
 	*/
 	IDTag string = "_id_"
+	/*
+		HandleTag is used to provide configuration for
+		default HTTP handlers
+	*/
+	HandleTag string = ""
 )
 
 /*
@@ -239,7 +244,7 @@ This addition represents an actual insertion to the
 underlying database collection pointed at by ec.
 
 The added document's database ID is then returned, or
-any errors that occurred.
+any pkgErrors that occurred.
 */
 func (e *Entity) Add(entity interface{}) (primitive.ObjectID, error) {
 	nilID := primitive.NilObjectID
