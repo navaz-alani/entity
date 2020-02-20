@@ -1,7 +1,37 @@
 /*
 Package multiplexer defines an EntityMux type which is basically
 a multiplexer for Entity types.
-It uses struct field tags in Entity
+It uses struct field tags in Entity definitions in order to
+create database collections, middleware for request pre-processing
+and more.
+
+Tags
+
+Here are the field tags that the EntityMux uses:
+
+entity.IDTag - This tag is used to give a name to an Entity.
+This name specifies the mongo.Collection that will be created
+in the database for an Entity. It is also used by EntityMux to
+internally work with Entity types. This value must be unique
+amongst the Entity types that the EntityMux manages.
+
+entity.HandleTag - This tag is used to provide configurations
+for middleware generation. The value for this tag is a string
+containing configuration tokens. These tokens are single characters
+(runes) which can be used to classify a field. For example, the
+CreationFieldsToken token can be used used to specify which
+fields should be parsed from an http.Response body for the
+middleware generation.
+
+entity.AxisTag - This tag is used to specify which fields can be
+considered to be unique (to an Entity) within a collection.
+The tag value which indicates that a field is an axis field is
+the string "true"-- all other values are rejected.
+
+entity.IndexTag - This tag is used to specify the fields for which
+an index needs to be built in the database collection. This is used
+hand in hand with the entity.Axis tag; in order for a field's index
+to be constructed, both these tags have to be set to "true".
 */
 package multiplexer
 
@@ -10,80 +40,33 @@ import (
 	"context"
 	"encoding/gob"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"reflect"
-	"strings"
 
 	"github.com/julienschmidt/httprouter"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/navaz-alani/entity"
+	"github.com/navaz-alani/entity/entityErrors"
 	"github.com/navaz-alani/entity/multiplexer/eMuxContext"
-	"github.com/navaz-alani/entity/pkgErrors"
-)
-
-/*
-condensedField is a shorthand representation of the information
-which is commonly used/is important within the context of this
-package.
-*/
-type condensedField struct {
-	Name string
-	Type reflect.Type
-	/*
-		RequestID is a string which specifies the fieldName to
-		expect when parsing JSON for this field.
-	*/
-	RequestID   string
-	StructIndex []int
-}
-
-/*
-metaEntity is a parsed version of an Entity's
-struct tags.
-It stores information that is frequently needed.
-*/
-type metaEntity struct {
-	Entity *entity.Entity
-	/*
-		EntityID is the value of the first non-empty
-		entity.IDTag value.
-	*/
-	EntityID string
-	/*
-		FieldClassifications maps a field classification to
-		an array of pointers of condensedFields.
-	*/
-	FieldClassifications *map[rune][]*condensedField
-}
-
-/*
-The following constants define the rune keys to the field
-classifications in a metaEntity.
-*/
-const (
-	/*
-		classCollectionName maps to an array containing a
-		single (or none at all) pointer to a condensedField
-		whose RequestID is the Entity's collectionName in the
-		database.
-	*/
-	classCollectionName rune = '*'
-	classCreationField  rune = 'c'
 )
 
 /*
 EntityMux is a multiplexer for Entities.
+It is designed to manage initialization for multiple
+Entity types from their struct definitions.
+
+See the Create function for more information about
+EntityMux initialization steps.
 */
 type EntityMux struct {
 	/*
-		entities is a collection of Entities which are
+		Entities is a collection of Entities which are
 		used in an application.
-		In the entities map, the key is the EntityID.
+		In the Entities map, the key is the EntityID.
 	*/
-	entities map[string]*metaEntity
+	Entities map[string]*metaEntity
 	/*
 		Router is the httprouter.Router on which the
 		EntityMux configuration has been set-up; other
@@ -99,27 +82,120 @@ type EntityMux struct {
 /*
 Collection returns a pointer to the mongo collection
 that the entity identified by the given entityID is
-using.
+using for persistent storage.
+
+To modify the options for the collection, the client can
+use the db pointer used during initialization
 */
 func (em *EntityMux) Collection(entityID string) *mongo.Collection {
-	return em.entities[entityID].Entity.PStorage
+	return em.Entities[entityID].Entity.PStorage
+}
+
+/*
+Create uses the given definitions to create an EntityMux which manages the
+corresponding Entities. The definitions are expected to be an array of
+empty/zero struct Types. For example, consider the User entity defined in
+the "Getting Started" section of the documentation of the entity package.
+In order to create an EntityMux which manages the User Entity, the following
+line suffices:
+
+	eMux, err := multiplexer.Create(dbPtr, User{})
+
+When internally registering Entities, a unique identifier is needed to
+refer to Entities. This identifier is called the EntityID and is defined using
+the IDTag. If the IDTag is not defined for any entity, the multiplexer may not
+be correctly initialized and an entityErrors.IncompleteEntityMetadata is
+returned.
+
+Remember, when instantiating an Entity, it is important to have a defined
+location for persistent storage. In this case, it is a *mongo.Collection.
+For each definition, a collection in the database is initialized. The name of
+this collection is exactly the same as the definition's EntityID.
+
+When initializing the collection, a schema validator is first created. If this
+is successful, the validator is injected as an option when creating the collection.
+Otherwise, the collection is created without a
+The validator also uses tags to generate schemas for validation. For more
+information, see the CollectionValidator function.
+
+After each collection has been created and linked to the respective Entity,
+the Entity's Optimize() method is called to index the axis fields which have
+been marked for indexing.
+*/
+func Create(db *mongo.Database, definitions ...interface{}) (*EntityMux, error) {
+	if db == nil {
+		return nil, entityErrors.DBUninitialized
+	}
+
+	newMux := &EntityMux{Entities: map[string]*metaEntity{}}
+
+	for i := 0; i < len(definitions); i++ {
+		defType := reflect.TypeOf(definitions[i])
+		fieldClassifications := classifyFields(defType)
+
+		var collectionName string
+		collectionNameClassification := fieldClassifications[CollectionNameToken]
+
+		if collectionNameClassification == nil || len(collectionNameClassification) == 0 ||
+			collectionNameClassification[0].RequestID == "" {
+			return nil, entityErrors.NoTag(entity.IDTag, defType.Name())
+		} else {
+			collectionName = collectionNameClassification[0].RequestID
+		}
+
+		var defCollection *mongo.Collection
+		if collectionOptions := CollectionValidator(defType); collectionOptions != nil {
+			defCollection = db.Collection(collectionName, collectionOptions)
+		} else {
+			defCollection = db.Collection(collectionName)
+		}
+
+		defEntity := &entity.Entity{
+			SchemaDefinition: defType,
+			PStorage:         defCollection,
+		}
+
+		if newMux.Entities[collectionName] == nil {
+			newMux.Entities[collectionName] = &metaEntity{
+				Entity:               defEntity,
+				EntityID:             collectionName,
+				FieldClassifications: &fieldClassifications,
+			}
+		} else {
+			return nil, entityErrors.DuplicateTag(entity.IDTag, defType.Name())
+		}
+
+		defEntity.Optimize()
+	}
+
+	return newMux, nil
 }
 
 /*
 CreationMiddleware returns httprouter middleware which can be used to
 derive a template of an Entity from an API request.
-It uses the HandleTag as well as the JSON/BSON/field name (in that
-priority) to to determine what to search for in incoming JSON
-payloads.
 
-TODO: document and implement linking of entities
+The creation fields for the Entity corresponding to the given entityID
+are used to pre-populate the response context with an "auto-filled"
+Entity.
+For each creation field, the first non-empty value of JSON/BSON/field name
+is used to check the incoming request payload for a corresponding value.
+This means that if the JSONTag is defined for the field, it will be assumed
+to be the corresponding fieldName in the JSON payload. Otherwise, the BSONTag
+is checked next. If the BSONTag is also empty, the field's name is used.
+
+The returned function is middleware which can be used on an httprouter.Router
+so that when a request is received by the client's httprouter.Handle, an
+auto-completed version of the entity is present in the request context.
+
 NOTE: This functionality does not yet support embedding of Entity
-types. This can be achieved through linking instead.
+types. This can be achieved through linking instead. This is a
+feature which has been planned for implementation.
 */
 func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.Handle) httprouter.Handle, error) {
 	var thisEntity *metaEntity
-	if meta := em.entities[entityID]; meta.EntityID == "" {
-		return nil, pkgErrors.IncompleteEntityMetadata
+	if meta := em.Entities[entityID]; meta.EntityID == "" {
+		return nil, entityErrors.IncompleteEntityMetadata
 	} else {
 		thisEntity = meta
 	}
@@ -143,9 +219,9 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 				malformed and the client can handle this.
 			*/
 			entityType := thisEntity.Entity.SchemaDefinition
-			encodedEntityValue := reflect.New(entityType)
+			requestEntity := reflect.New(entityType)
 
-			creationFields := (*thisEntity.FieldClassifications)[classCreationField]
+			creationFields := (*thisEntity.FieldClassifications)[CreationFieldsToken]
 			if creationFields == nil {
 				creationFields = []*condensedField{}
 			}
@@ -156,7 +232,7 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 
 				// check that the payload contains this field
 				if fieldVal := req[field.RequestID]; fieldVal != "" {
-					f := encodedEntityValue.FieldByIndex(field.StructIndex).Elem()
+					f := requestEntity.FieldByIndex(field.StructIndex).Elem()
 					if !f.CanSet() {
 						continue
 					}
@@ -177,134 +253,24 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 				}
 			}
 
-			// place encodedEntityValue in the request context
 			muxCtx := eMuxContext.EMuxContext{}
-			muxCtx.PackagePayload(eMuxContext.EMuxKey, encodedEntityValue)
+			muxCtx.PackagePayload(eMuxContext.EMuxKey, requestEntity)
 
-			next(w, muxCtx.ContextualizedRequest(r, context.Background(), eMuxContext.EMuxKey), ps)
+			next(w, muxCtx.ContextualizeRequest(r, context.Background(), eMuxContext.EMuxKey), ps)
 		}
 	}
 
 	return handle, nil
 }
 
-/*
-requestID returns the fieldName to expect when parsing for this
-field in incoming request JSON payloads.
-*/
-func requestID(field *reflect.StructField) string {
-	if tag := field.Tag.Get(entity.JSONTag); tag != "" {
-		return tag
-	} else if tag := field.Tag.Get(entity.BSONTag); tag != "" {
-		return tag
-	} else {
-		return field.Name
-	}
-}
 
 /*
-classifyFields is a function which iterates over the fields of
-the given Type and classifies them by their HandleTags.
-*/
-func classifyFields(defType reflect.Type) map[rune][]*condensedField {
-	classifications := map[rune][]*condensedField{}
-
-	collectionName := classifications[classCollectionName]
-	creationFields := classifications[classCreationField]
-
-	for i := 0; i < defType.NumField(); i++ {
-		field := defType.Field(i)
-		fieldCondensed := &condensedField{
-			Name:        field.Name,
-			Type:        field.Type,
-			RequestID:   requestID(&field),
-			StructIndex: field.Index,
-		}
-
-		if tag := field.Tag.Get(entity.IDTag); (collectionName == nil || len(collectionName) == 0) &&
-			tag != "" {
-			collectionName = []*condensedField{fieldCondensed}
-		}
-
-		if tag := field.Tag.Get(entity.HandleTag); strings.ContainsAny(tag, "c") {
-			if creationFields == nil || len(creationFields) == 0 {
-				creationFields = []*condensedField{fieldCondensed}
-			} else {
-				creationFields = append(creationFields, fieldCondensed)
-			}
-		}
-	}
-
-	return classifications
-}
-
-/*
-Create uses the given database and data definitions
-to initialize an EntityMux.
-The definitions are expected to be an array of struct Types
-which define the Entities to be used in this application.
-There is a set of tags available to decorate fields in these
-struct Types to configure the EntityMux.
-
-It firstly creates the appropriate collection in the database
-for every definition using information from the EntityID field.
-The collection is packaged, along with the Type definition for
-every struct and stored in the EntityMux.
-*/
-func Create(db *mongo.Database, definitions []interface{}) (*EntityMux, error) {
-	newMux := &EntityMux{entities: map[string]*metaEntity{}}
-
-	for i := 0; i < len(definitions); i++ {
-		defType := reflect.TypeOf(definitions[i])
-		fieldClassifications := classifyFields(defType)
-
-		var collectionName string
-		collectionNameClassification := fieldClassifications[classCollectionName]
-
-		if collectionNameClassification == nil || len(collectionNameClassification) == 0 ||
-			collectionNameClassification[0].RequestID == "" {
-			return nil, fmt.Errorf("no '%s' tag on '%s'",
-				entity.IDTag, defType.Name())
-		} else {
-			collectionName = collectionNameClassification[0].RequestID
-		}
-
-		var defCollection *mongo.Collection
-		if collectionOptions := collectionValidator(defType); collectionOptions != nil {
-			defCollection = db.Collection(collectionName, collectionOptions)
-		} else {
-			defCollection = db.Collection(collectionName)
-		}
-
-		defEntity := &entity.Entity{
-			SchemaDefinition: defType,
-			PStorage:         defCollection,
-		}
-
-		if newMux.entities[collectionName] == nil {
-			newMux.entities[collectionName] = &metaEntity{
-				Entity:               defEntity,
-				EntityID:             collectionName,
-				FieldClassifications: &fieldClassifications,
-			}
-		} else {
-			return nil, fmt.Errorf("duplicate '%s' tag on '%s'",
-				entity.IDTag, defType.Name())
-		}
-
-		defEntity.Optimize()
-		break
-	}
-
-	return newMux, nil
-}
-
-/*
-collectionValidator uses the given Type to access field
+CollectionValidator uses the given Type to access field
 tags for the struct and create a collection validator to
 be used for this struct.
+
+TODO: This function still has to be implemented.
 */
-func collectionValidator(_ reflect.Type) *options.CollectionOptions {
-	// TODO: implement collection validator
+func CollectionValidator(_ reflect.Type) *options.CollectionOptions {
 	return nil
 }

@@ -33,10 +33,10 @@ func (emc *EMuxContext) PackagePayload(key string, payload interface{}) {
 }
 
 /*
-ContextualizedRequest returns the given request, with its context changed
+ContextualizeRequest returns the given request, with its context changed
 to one with the given key and pointer to EMuxContext as the value.
 */
-func (emc *EMuxContext) ContextualizedRequest(r *http.Request, parentCtx context.Context, key string) *http.Request {
+func (emc *EMuxContext) ContextualizeRequest(r *http.Request, parentCtx context.Context, key string) *http.Request {
 	ctx := context.WithValue(parentCtx, key, emc)
 	return r.WithContext(ctx)
 }

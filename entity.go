@@ -111,9 +111,9 @@ const (
 	IDTag string = "_id_"
 	/*
 		HandleTag is used to provide configuration for
-		default HTTP handlers
+		generating pre-processing middleware.
 	*/
-	HandleTag string = ""
+	HandleTag string = "_hd_"
 )
 
 /*
@@ -244,7 +244,7 @@ This addition represents an actual insertion to the
 underlying database collection pointed at by ec.
 
 The added document's database ID is then returned, or
-any pkgErrors that occurred.
+any entityErrors that occurred.
 */
 func (e *Entity) Add(entity interface{}) (primitive.ObjectID, error) {
 	nilID := primitive.NilObjectID
@@ -377,10 +377,12 @@ func (e *Entity) Optimize() {
 
 		// Ignore field if IndexTag not set
 		indexTag := field.Tag.Get(IndexTag)
-		if indexTag == "" {
+		axisTag := field.Tag.Get(AxisTag)
+		if indexTag != "true" || axisTag != "true" {
 			continue
 		}
 
+		// TODO: a fieldName function with these priorities
 		var fieldName string
 		if tag := field.Tag.Get(BSONTag); tag != "" {
 			fieldName = tag
