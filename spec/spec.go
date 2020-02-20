@@ -1,3 +1,8 @@
+/*
+Package spec defines the ESpec (Entity Specification) Type,
+which can be used for queries, and update operations on
+the general Entity.
+*/
 package spec
 
 import (
@@ -17,17 +22,25 @@ have the zero value for the QueryOperator field
 and vice versa.
 */
 type ESpec struct {
-	// Field is the database field-name to constrain
-	// the search
+	/*
+		Field is the database field-name to constrain
+		the search
+	*/
 	Field string `json:"field"`
-	// Target specifies the value to query in the
-	// constrained field
+	/*
+		Target specifies the value to query in the
+		constrained field
+	*/
 	Target interface{} `json:"target"`
-	// UpdateOperator specifies an update operator for
-	// this ESpec
+	/*
+		UpdateOperator specifies an update operator for
+		this ESpec
+	*/
 	UpdateOperator string `json:"updateOperator"`
-	// QueryOperator specified a query operator for
-	// this ESpec
+	/*
+		QueryOperator specified a query operator for
+		this ESpec
+	*/
 	QueryOperator string `json:"queryOperator"`
 }
 

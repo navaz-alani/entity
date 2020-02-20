@@ -21,7 +21,6 @@ collection indexes and creating Query/Update/Delete filters.
 The Axis Policy ensures data integrity by enforcing that all
 Entities within a collection have unique axis values.
 
-
 This Policy is especially useful when querying elements for
 Read/Update/Delete operations. The client benefits through the
 ability to specify whether a field is an axis, using the "axis"
@@ -38,9 +37,9 @@ For example, here is a hypothetical struct for defining
 a (useless) User Entity:
 
 	type User struct {
-		ID     primitive.ObjectID  `json:"-" bson:"_id"`
+		ID     primitive.ObjectID  `json:"-" bson:"_id" _id_:"user"`
 		Name   string              `json:"name" bson:"name"`
-		Email  string              `json:"email" bson:"email" axis:"true" index:""`
+		Email  string              `json:"email" bson:"email" axis:"true"`
 	}
 
 Next, register this User struct as an Entity.
@@ -70,6 +69,10 @@ this Entity definition and can lead to hundreds of lines of less
 code being written.
 The Entity package aims to (at least) provide a high level
 API with the basic CRUD boilerplate code already taken care of.
+
+See github.com/navaz-alani/entity/multiplexer for information about
+the EntityMux which is able to manage a collection of entities for
+larger applications.
 */
 package entity
 
@@ -101,6 +104,16 @@ const (
 		needs to be created.
 	*/
 	IndexTag string = "index"
+	/*
+		IDTag is used for providing Entity identifiers
+		for an EntityMux.
+	*/
+	IDTag string = "_id_"
+	/*
+		HandleTag is used to provide configuration for
+		generating pre-processing middleware.
+	*/
+	HandleTag string = "_hd_"
 )
 
 /*
@@ -196,6 +209,11 @@ func ToBSON(entity interface{}) bson.M {
 Entity is a type which is used to store
 information about a collection of entities. It is
 used to manage Entities and ensure persistence.
+
+The SchemaDefinition field's contents is used to
+generate a validator for the collection. This is
+done using "validate" tags which allow deeper
+schema specification.
 */
 type Entity struct {
 	/*
@@ -226,7 +244,7 @@ This addition represents an actual insertion to the
 underlying database collection pointed at by ec.
 
 The added document's database ID is then returned, or
-any errors that occurred.
+any entityErrors that occurred.
 */
 func (e *Entity) Add(entity interface{}) (primitive.ObjectID, error) {
 	nilID := primitive.NilObjectID
@@ -359,10 +377,12 @@ func (e *Entity) Optimize() {
 
 		// Ignore field if IndexTag not set
 		indexTag := field.Tag.Get(IndexTag)
-		if indexTag == "" {
+		axisTag := field.Tag.Get(AxisTag)
+		if indexTag != "true" || axisTag != "true" {
 			continue
 		}
 
+		// TODO: a fieldName function with these priorities
 		var fieldName string
 		if tag := field.Tag.Get(BSONTag); tag != "" {
 			fieldName = tag
