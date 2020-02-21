@@ -378,7 +378,7 @@ func (e *Entity) Optimize() {
 		// Ignore field if IndexTag not set
 		indexTag := field.Tag.Get(IndexTag)
 		axisTag := field.Tag.Get(AxisTag)
-		if indexTag != "true" || axisTag != "true" {
+		if !(indexTag == "true" && axisTag == "true") {
 			continue
 		}
 

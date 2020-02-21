@@ -32,6 +32,7 @@ type condensedField struct {
 		embedded index of a field in a struct.
 	*/
 	StructIndex []int
+	Value       interface{}
 }
 
 /*
@@ -48,9 +49,9 @@ type metaEntity struct {
 	EntityID string
 	/*
 		FieldClassifications maps a field classification to
-		an array of pointers of condensedFields.
+		a slice of pointers to condensedFields.
 	*/
-	FieldClassifications *map[rune][]*condensedField
+	FieldClassifications map[rune][]*condensedField
 }
 
 /*
@@ -85,9 +86,9 @@ field in incoming request JSON payloads.
 TODO: a general requestID with priority function
 */
 func requestID(field *reflect.StructField) string {
-	if tag := field.Tag.Get(entity.JSONTag); tag != "" {
+	if tag := field.Tag.Get(entity.JSONTag); tag != "" && tag != "-" {
 		return tag
-	} else if tag := field.Tag.Get(entity.BSONTag); tag != "" {
+	} else if tag := field.Tag.Get(entity.BSONTag); tag != "" && tag != "-" {
 		return tag
 	} else {
 		return field.Name
@@ -103,8 +104,8 @@ TODO: generalize this function for all tags
 func classifyFields(defType reflect.Type) map[rune][]*condensedField {
 	classifications := map[rune][]*condensedField{}
 
-	collectionName := classifications[CollectionNameToken]
-	creationFields := classifications[CreationFieldsToken]
+	var collectionName []*condensedField
+	var creationFields []*condensedField
 
 	for i := 0; i < defType.NumField(); i++ {
 		field := defType.Field(i)
@@ -115,19 +116,19 @@ func classifyFields(defType reflect.Type) map[rune][]*condensedField {
 			StructIndex: field.Index,
 		}
 
-		if tag := field.Tag.Get(entity.IDTag); (collectionName == nil || len(collectionName) == 0) &&
-			tag != "" {
-			collectionName = []*condensedField{fieldCondensed}
+		if tag := field.Tag.Get(entity.IDTag); len(collectionName) == 0 &&
+			(tag != "" && tag != "-") {
+			fieldCondensed.Value = tag
+			collectionName = append(collectionName, fieldCondensed)
 		}
 
 		if tag := field.Tag.Get(entity.HandleTag); strings.ContainsAny(tag, "c") {
-			if creationFields == nil || len(creationFields) == 0 {
-				creationFields = []*condensedField{fieldCondensed}
-			} else {
-				creationFields = append(creationFields, fieldCondensed)
-			}
+			creationFields = append(creationFields, fieldCondensed)
 		}
 	}
+
+	classifications[CollectionNameToken] = collectionName
+	classifications[CreationFieldsToken] = creationFields
 
 	return classifications
 }
