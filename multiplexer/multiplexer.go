@@ -136,11 +136,10 @@ func Create(db *mongo.Database, definitions ...interface{}) (*EntityMux, error) 
 		var collectionName string
 		collectionNameClassification := fieldClassifications[CollectionNameToken]
 
-		if collectionNameClassification == nil || len(collectionNameClassification) == 0 ||
-			collectionNameClassification[0].RequestID == "" {
+		if len(collectionNameClassification) == 0 || collectionNameClassification[0].Value == "" {
 			return nil, entityErrors.NoTag(entity.IDTag, defType.Name())
 		} else {
-			collectionName = collectionNameClassification[0].RequestID
+			collectionName, _ = collectionNameClassification[0].Value.(string)
 		}
 
 		var defCollection *mongo.Collection
@@ -159,7 +158,7 @@ func Create(db *mongo.Database, definitions ...interface{}) (*EntityMux, error) 
 			newMux.Entities[collectionName] = &metaEntity{
 				Entity:               defEntity,
 				EntityID:             collectionName,
-				FieldClassifications: &fieldClassifications,
+				FieldClassifications: fieldClassifications,
 			}
 		} else {
 			return nil, entityErrors.DuplicateTag(entity.IDTag, defType.Name())
@@ -193,11 +192,11 @@ types. This can be achieved through linking instead. This is a
 feature which has been planned for implementation.
 */
 func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.Handle) httprouter.Handle, error) {
-	var thisEntity *metaEntity
-	if meta := em.Entities[entityID]; meta.EntityID == "" {
+	var meta *metaEntity
+	if m := em.Entities[entityID]; m.EntityID == "" {
 		return nil, entityErrors.IncompleteEntityMetadata
 	} else {
-		thisEntity = meta
+		meta = m
 	}
 
 	handle := func(next httprouter.Handle) httprouter.Handle {
@@ -218,13 +217,10 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 				If the type assertion fails, the request data is probably
 				malformed and the client can handle this.
 			*/
-			entityType := thisEntity.Entity.SchemaDefinition
-			requestEntity := reflect.New(entityType)
+			entityType := meta.Entity.SchemaDefinition
+			preProcessedEntity := reflect.New(entityType)
 
-			creationFields := (*thisEntity.FieldClassifications)[CreationFieldsToken]
-			if creationFields == nil {
-				creationFields = []*condensedField{}
-			}
+			creationFields := meta.FieldClassifications[CreationFieldsToken]
 
 			// Compare the fields in the struct
 			for i := 0; i < len(creationFields); i++ {
@@ -232,7 +228,7 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 
 				// check that the payload contains this field
 				if fieldVal := req[field.RequestID]; fieldVal != "" {
-					f := requestEntity.FieldByIndex(field.StructIndex).Elem()
+					f := preProcessedEntity.FieldByIndex(field.StructIndex).Elem()
 					if !f.CanSet() {
 						continue
 					}
@@ -254,7 +250,7 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 			}
 
 			muxCtx := eMuxContext.EMuxContext{}
-			muxCtx.PackagePayload(eMuxContext.EMuxKey, requestEntity)
+			muxCtx.PackagePayload(eMuxContext.EMuxKey, preProcessedEntity)
 
 			next(w, muxCtx.ContextualizeRequest(r, context.Background(), eMuxContext.EMuxKey), ps)
 		}
@@ -262,7 +258,6 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 
 	return handle, nil
 }
-
 
 /*
 CollectionValidator uses the given Type to access field
