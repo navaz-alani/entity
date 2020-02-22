@@ -393,15 +393,19 @@ func (e *Entity) Optimize() {
 		}
 
 		var indexType string
-		if indexTag != "" {
+		if !(indexTag == "" || indexTag == "-") {
 			indexType = indexTag
 		} else {
+			// TODO: infer index type from field type
 			indexType = "text"
 		}
 
 		keys = append(keys, bson.E{Key: fieldName, Value: indexType})
 	}
 
+	if len(keys) == 0 {
+		return
+	}
 	index := []mongo.IndexModel{{Keys: keys}}
 
 	opts := options.CreateIndexes().SetMaxTime(3 * time.Second)

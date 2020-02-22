@@ -13,13 +13,9 @@ which is commonly used/is important within the context of this
 package.
 */
 type condensedField struct {
-	/*
-		Name is the field's field name.
-	*/
+	// Name is the field's field name.
 	Name string
-	/*
-		Type is the reflection type of the field.
-	*/
+	// Type is the reflection type of the field.
 	Type reflect.Type
 	/*
 		RequestID is a string which specifies the fieldName to
@@ -27,12 +23,7 @@ type condensedField struct {
 		It can be equal to the Name field.
 	*/
 	RequestID string
-	/*
-		StructIndex is an integer array which describes the
-		embedded index of a field in a struct.
-	*/
-	StructIndex []int
-	Value       interface{}
+	Value     interface{}
 }
 
 /*
@@ -61,12 +52,12 @@ type metaEntity struct {
 */
 const (
 	/*
-		CollectionNameToken maps to an array containing a
+		CollectionIDToken maps to an array containing a
 		single (or none at all) pointer to a condensedField
 		whose RequestID is the Entity's collectionName in the
 		database.
 	*/
-	CollectionNameToken rune = '*'
+	CollectionIDToken rune = '*'
 	/*
 		CreationFieldsToken maps to an array containing fields
 		which were specified to be provided in an http.Request.
@@ -78,6 +69,11 @@ const (
 	*/
 	AxisFieldToken rune = 'a'
 )
+
+var HandleTokens = []rune{
+	CreationFieldsToken,
+	AxisFieldToken,
+}
 
 /*
 requestID returns the fieldName to expect when parsing for this
@@ -98,37 +94,48 @@ func requestID(field *reflect.StructField) string {
 /*
 classifyFields is a function which iterates over the fields of
 the given Type and classifies them by their HandleTags.
-
-TODO: generalize this function for all tags
 */
 func classifyFields(defType reflect.Type) map[rune][]*condensedField {
 	classifications := map[rune][]*condensedField{}
 
-	var collectionName []*condensedField
-	var creationFields []*condensedField
-
 	for i := 0; i < defType.NumField(); i++ {
-		field := defType.Field(i)
-		fieldCondensed := &condensedField{
-			Name:        field.Name,
-			Type:        field.Type,
-			RequestID:   requestID(&field),
-			StructIndex: field.Index,
+		classifyHandleTags(defType.Field(i), classifications)
+	}
+
+	return classifications
+}
+
+/*
+classifyHandleTags classifies the given field by its handle tags.
+For every tag that the field matches, a pointer to a condensedField
+representation of the given field is added to the corresponding
+tag's field array in the given class map.
+
+If an entity.IDTag is encountered, the collectionID is reset. This
+means that the last entity.IDTag will specify the value of the
+entity's mongoDB collection.
+*/
+func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensedField) {
+	for _, tok := range HandleTokens {
+		newField := &condensedField{
+			Name:      field.Name,
+			Type:      nil,
+			RequestID: requestID(&field),
 		}
 
-		if tag := field.Tag.Get(entity.IDTag); len(collectionName) == 0 &&
-			(tag != "" && tag != "-") {
-			fieldCondensed.Value = tag
-			collectionName = append(collectionName, fieldCondensed)
+		if classes[tok] == nil {
+			classes[tok] = make([]*condensedField, 0)
 		}
 
-		if tag := field.Tag.Get(entity.HandleTag); strings.ContainsAny(tag, "c") {
-			creationFields = append(creationFields, fieldCondensed)
+		if tag := field.Tag.Get(entity.IDTag); tag != "" && tag != "-" {
+			newField.Value = tag
+			classes[CollectionIDToken] = make([]*condensedField, 0)
+			classes[CollectionIDToken] = append(classes[CollectionIDToken], newField)
+		}
+
+		if tag := field.Tag.Get(entity.HandleTag); strings.ContainsAny(tag, string(tok)) {
+			classes[tok] = append(classes[tok], newField)
 		}
 	}
 
-	classifications[CollectionNameToken] = collectionName
-	classifications[CreationFieldsToken] = creationFields
-
-	return classifications
 }
