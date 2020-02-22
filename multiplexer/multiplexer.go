@@ -36,10 +36,9 @@ to be constructed, both these tags have to be set to "true".
 package multiplexer
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 
@@ -127,14 +126,15 @@ func Create(db *mongo.Database, definitions ...interface{}) (*EntityMux, error) 
 		return nil, entityErrors.DBUninitialized
 	}
 
-	newMux := &EntityMux{Entities: map[string]*metaEntity{}}
+	entityMap := make(map[string]*metaEntity)
+	newMux := &EntityMux{Entities: entityMap}
 
 	for i := 0; i < len(definitions); i++ {
 		defType := reflect.TypeOf(definitions[i])
 		fieldClassifications := classifyFields(defType)
 
 		var collectionName string
-		collectionNameClassification := fieldClassifications[CollectionNameToken]
+		collectionNameClassification := fieldClassifications[CollectionIDToken]
 
 		if len(collectionNameClassification) == 0 || collectionNameClassification[0].Value == "" {
 			return nil, entityErrors.NoTag(entity.IDTag, defType.Name())
@@ -228,35 +228,46 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 
 				// check that the payload contains this field
 				if fieldVal := req[field.RequestID]; fieldVal != "" {
-					f := preProcessedEntity.FieldByIndex(field.StructIndex).Elem()
+					f := preProcessedEntity.Elem().FieldByName(field.Name)
 					if !f.CanSet() {
 						continue
 					}
-
-					/*
-						Interface serialised to bytes.
-						Client decodes bytes to interface, which is type asserted
-						against the client's implementation.
-					*/
-					var serializedValue bytes.Buffer
-					enc := gob.NewEncoder(&serializedValue)
-					err := enc.Encode(fieldVal)
-					if err != nil {
-						continue
-					}
-
-					f.SetBytes(serializedValue.Bytes())
+					_ = writeToField(f, fieldVal)
 				}
 			}
 
-			muxCtx := eMuxContext.EMuxContext{}
-			muxCtx.PackagePayload(eMuxContext.EMuxKey, preProcessedEntity)
+			muxCtx := eMuxContext.Create()
+			muxCtx.Set(eMuxContext.EMuxKey, preProcessedEntity)
 
 			next(w, muxCtx.ContextualizeRequest(r, context.Background(), eMuxContext.EMuxKey), ps)
 		}
 	}
 
 	return handle, nil
+}
+
+/*
+writeToField takes a field value and attempts to set
+its value to the given data.
+*/
+func writeToField(field reflect.Value, data interface{}) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(data.(string))
+	case reflect.Int:
+		field.SetInt(data.(int64))
+	case reflect.Bool:
+		field.SetBool(data.(bool))
+	default:
+		field.Set(reflect.ValueOf(data))
+	}
+	return nil
 }
 
 /*
