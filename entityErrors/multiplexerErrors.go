@@ -6,8 +6,10 @@ package entityErrors
 
 import "fmt"
 
-var DBUninitialized = fmt.Errorf("null db pointer")
-var IncompleteEntityMetadata = fmt.Errorf("insufficient entity metadata")
+var (
+	DBUninitialized          = fmt.Errorf("null db pointer")
+	IncompleteEntityMetadata = fmt.Errorf("insufficient entity metadata")
+)
 
 func NoTag(tag, entity string) error {
 	return fmt.Errorf("no '%s' tag on '%s'", tag, entity)

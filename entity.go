@@ -1,85 +1,7 @@
-/*
-Package entity defines a convenient abstraction which
-can be used with MongoDB in order to streamline CRUD
-operations.
-
-This definition also allows a centralization of security
-and other policies related to an entity within the app.
-This leads to fewer bugs, and when there are bugs, due
-to the modularization of policies, the origin of bugs
-is easier to locate.
-
-The goal is to define an abstraction which is useful for
-the general entity and can make the process of writing code
-much more efficient.
-
-Axis Policy
-
-An axis is defined as a field in an Entity which
-can be assumed to be unique. This is important when creating
-collection indexes and creating Query/Update/Delete filters.
-The Axis Policy ensures data integrity by enforcing that all
-Entities within a collection have unique axis values.
-
-This Policy is especially useful when querying elements for
-Read/Update/Delete operations. The client benefits through the
-ability to specify whether a field is an axis, using the "axis"
-tag, in the struct field. This tag can be set to "true" to enforce
-it as an axis field.
-
-Getting started
-
-To use the Entity abstraction, start by creating a struct
-which will define the Entity that you want to work with.
-Available in this step, is the "axis" tag which is useful in
-specifying which fields are to be treated as axis fields.
-For example, here is a hypothetical struct for defining
-a (useless) User Entity:
-
-	type User struct {
-		ID     primitive.ObjectID  `json:"-" bson:"_id" _id_:"user"`
-		Name   string              `json:"name" bson:"name"`
-		Email  string              `json:"email" bson:"email" axis:"true"`
-	}
-
-Next, register this User struct as an Entity.
-
-	UserEntity := Entity{
-		SchemaDefinition: TypeOf(User{}),
-		PStorage:         &mongoCollection
-	}
-
-Run the Optimize function to generate indexes for the axis fields:
-
-	UserEntity.Optimize()
-
-Create a User:
-
-	u := User{
-		Name:  "Jane Doe",
-		Email: "jane.doe@example.com"
-	}
-
-Add this user to the database:
-
-	id, err := UserEntity.Add(u)
-
-The other Read/Update/Delete operations become as simple with
-this Entity definition and can lead to hundreds of lines of less
-code being written.
-The Entity package aims to (at least) provide a high level
-API with the basic CRUD boilerplate code already taken care of.
-
-See github.com/navaz-alani/entity/multiplexer for information about
-the EntityMux which is able to manage a collection of entities for
-larger applications.
-*/
 package entity
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"reflect"
 	"time"
 
@@ -88,6 +10,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
+	"github.com/navaz-alani/entity/entityErrors"
+	"github.com/navaz-alani/entity/fieldName"
 	"github.com/navaz-alani/entity/spec"
 )
 
@@ -137,6 +61,7 @@ an entity from a collection.
 
 The filter field is chosen with the following priority:
 BSON tag "_id", Axis tag "true" (then BSON, JSON tags)
+and lastly the field name.
 
 Note that the field with the BSON tag "_id" must be of
 type primitive.ObjectID so that comparison succeeds.
@@ -152,16 +77,7 @@ func Filter(entity interface{}) bson.M {
 		if tag := field.Tag.Get(BSONTag); tag == "_id" && filterValue != primitive.NilObjectID {
 			return bson.M{"_id": filterValue}
 		} else if tag := field.Tag.Get(AxisTag); tag == "true" && filterValue != "" {
-			var filterFieldName string
-
-			if tag := field.Tag.Get(BSONTag); tag != "" {
-				filterFieldName = tag
-			} else if tag := field.Tag.Get(JSONTag); tag != "" {
-				filterFieldName = tag
-			} else {
-				filterFieldName = field.Name
-			}
-
+			var filterFieldName = fieldName.ByPriority(field, fieldName.PriorityBsonJson)
 			return bson.M{filterFieldName: filterValue}
 		}
 	}
@@ -185,21 +101,13 @@ func ToBSON(entity interface{}) bson.M {
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-
-		var fieldName string
-		if tag := field.Tag.Get(BSONTag); tag != "" {
-			// Skip "_id" field when encoding to BSON
-			if tag == "_id" {
-				continue
-			}
-			fieldName = tag
-		} else if tag := field.Tag.Get(JSONTag); tag != "" {
-			fieldName = tag
-		} else {
-			fieldName = field.Name
+		if tag := field.Tag.Get(BSONTag); tag == "_id" {
+			continue
 		}
 
-		bsonEncoding[fieldName] = v.Field(i).Interface()
+		var fName = fieldName.ByPriority(field, fieldName.PriorityBsonJson)
+
+		bsonEncoding[fName] = v.Field(i).Interface()
 	}
 
 	return bsonEncoding
@@ -230,18 +138,18 @@ type Entity struct {
 
 /*
 typeCheck verifies whether the entity can be used with the
-Entity ec.
+Entity e.
 */
 func (e *Entity) typeCheck(entity interface{}) bool {
 	return TypeOf(entity) == e.SchemaDefinition
 }
 
 /*
-Add adds the given entity to the Entity ec.
+Add adds the given entity to the Entity e.
 The given entity is expected to be of struct kind.
 
 This addition represents an actual insertion to the
-underlying database collection pointed at by ec.
+underlying database collection pointed at by e.
 
 The added document's database ID is then returned, or
 any entityErrors that occurred.
@@ -250,13 +158,12 @@ func (e *Entity) Add(entity interface{}) (primitive.ObjectID, error) {
 	nilID := primitive.NilObjectID
 
 	if !e.typeCheck(entity) {
-		return nilID, fmt.Errorf("incompatible entity type")
+		return nilID, entityErrors.IncompatibleEntityType
 	}
 
 	dbDoc := ToBSON(entity)
-	if dbDoc == nil {
-		return nilID, fmt.Errorf(
-			"entity body incomplete; will not add (Axis Policy)")
+	if dbDoc == nil || len(dbDoc) == 0 {
+		return nilID, entityErrors.BodyIncomplete
 	}
 
 	// TODO: add check for whether the defined axis fields are unique
@@ -268,7 +175,7 @@ func (e *Entity) Add(entity interface{}) (primitive.ObjectID, error) {
 
 	addedID, ok := res.InsertedID.(primitive.ObjectID)
 	if !ok {
-		return nilID, fmt.Errorf("added entity but failed to parse addedID")
+		return nilID, entityErrors.AddedIDParseFail
 	}
 
 	return addedID, nil
@@ -277,19 +184,19 @@ func (e *Entity) Add(entity interface{}) (primitive.ObjectID, error) {
 /*
 Edit uses the axes of the given entity to find a
 document in the underlying database collection pointed
-at by ec and edits it according to the specified spec.
+at by e and edits it according to the specified spec.
 
 An error is returned which, if all went alright, should
 be expected to be nil.
 */
 func (e *Entity) Edit(entity interface{}, spec spec.ESpec) error {
 	if !e.typeCheck(entity) {
-		return fmt.Errorf("incompatible entity type")
+		return entityErrors.IncompatibleEntityType
 	}
 
 	filter := Filter(entity)
 	if filter == nil {
-		log.Panicln("entity axis undefined (Axis Policy)")
+		return entityErrors.UndefinedAxis
 	}
 
 	res := e.PStorage.FindOneAndUpdate(
@@ -300,7 +207,7 @@ func (e *Entity) Edit(entity interface{}, spec spec.ESpec) error {
 /*
 Exists returns whether the filter produced by the given entity
 matches any documents in the underlying database collection
-pointed at by ec.
+pointed at by e.
 If any documents are matched and dest is non-nil, the matched
 document will be decoded into dest, after which the fields can
 be accessed.
@@ -311,12 +218,12 @@ be expected to be nil.
 */
 func (e *Entity) Exists(entity, dest interface{}) (bool, error) {
 	if !e.typeCheck(entity) {
-		return false, fmt.Errorf("incompatible entity type")
+		return false, entityErrors.IncompatibleEntityType
 	}
 
 	filter := Filter(entity)
 	if filter == nil {
-		return false, fmt.Errorf("entity axis undefined (Axis Policy)")
+		return false, entityErrors.UndefinedAxis
 	}
 
 	res := e.PStorage.FindOne(context.TODO(), filter)
@@ -324,7 +231,7 @@ func (e *Entity) Exists(entity, dest interface{}) (bool, error) {
 		if dest != nil {
 			err := res.Decode(dest)
 			if err != nil {
-				return true, fmt.Errorf("failed to decode DB result")
+				return true, entityErrors.DBDecodeFail
 			}
 
 			return true, nil
@@ -336,19 +243,19 @@ func (e *Entity) Exists(entity, dest interface{}) (bool, error) {
 
 /*
 Delete deletes the given entity from the underlying database
-collection pointed at by ec.
+collection pointed at by e.
 
 It returns an error from the delete operation which, if all
 went well, can be expected to be nil.
 */
 func (e *Entity) Delete(entity interface{}) error {
 	if !e.typeCheck(entity) {
-		return fmt.Errorf("incompatible entity type")
+		return entityErrors.IncompatibleEntityType
 	}
 
 	filter := Filter(entity)
 	if filter == nil {
-		return fmt.Errorf("entity axis undefined (Axis Policy)")
+		return entityErrors.UndefinedAxis
 	}
 
 	res := e.PStorage.FindOneAndDelete(context.TODO(), filter)
@@ -369,7 +276,7 @@ corresponding to the BSON/JSON/field name (in that priority) and
 value corresponding to the "index" tag value if non-empty and
 a default index type of "text".
 */
-func (e *Entity) Optimize() {
+func (e *Entity) Optimize() error {
 	keys := bson.D{}
 
 	for i := 0; i < e.SchemaDefinition.NumField(); i++ {
@@ -382,15 +289,7 @@ func (e *Entity) Optimize() {
 			continue
 		}
 
-		// TODO: a fieldName function with these priorities
-		var fieldName string
-		if tag := field.Tag.Get(BSONTag); tag != "" {
-			fieldName = tag
-		} else if tag := field.Tag.Get(JSONTag); tag != "" {
-			fieldName = tag
-		} else {
-			fieldName = field.Name
-		}
+		var fieldName = fieldName.ByPriority(field, fieldName.PriorityBsonJson)
 
 		var indexType string
 		if !(indexTag == "" || indexTag == "-") {
@@ -404,13 +303,14 @@ func (e *Entity) Optimize() {
 	}
 
 	if len(keys) == 0 {
-		return
+		return nil
 	}
 	index := []mongo.IndexModel{{Keys: keys}}
 
 	opts := options.CreateIndexes().SetMaxTime(3 * time.Second)
 	_, err := e.PStorage.Indexes().CreateMany(context.TODO(), index, opts)
 	if err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }
