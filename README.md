@@ -1,5 +1,6 @@
 # MongoDB Entity
 
+[![CodeFactor](https://www.codefactor.io/repository/github/navaz-alani/entity/badge)](https://www.codefactor.io/repository/github/navaz-alani/entity)
 ![Go Unit Tests](https://github.com/navaz-alani/entity/workflows/Go%20Unit%20Tests/badge.svg)
 [![GoDoc](https://godoc.org/github.com/navaz-alani/entity?status.svg)](https://godoc.org/github.com/navaz-alani/entity)
 
