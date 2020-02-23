@@ -11,7 +11,7 @@ import (
 )
 
 /*
-EMuxKey is the key which maps to EMux stored information within
+EMuxKey is the keyStr which maps to EMux stored information within
 an http.Request with a context.
 */
 const EMuxKey = "eMux"
@@ -36,14 +36,14 @@ func Create() *EMuxContext {
 
 /*
 Set stores the given payload in the EMuxContext *emc
-under the given key.
+under the given keyStr.
 */
 func (emc *EMuxContext) Set(key string, payload interface{}) {
 	emc.Payloads[key] = payload
 }
 
 /*
-Get retrieves the payload stored under the given key
+Get retrieves the payload stored under the given keyStr
 in the EMucContext *emc.
 */
 func (emc *EMuxContext) Retrieve(key string) interface{} {
@@ -52,7 +52,7 @@ func (emc *EMuxContext) Retrieve(key string) interface{} {
 
 /*
 ContextualizeRequest returns the given request, with its context changed
-to one with the given key and pointer to EMuxContext as the value.
+to one with the given keyStr and pointer to EMuxContext as the value.
 */
 func (emc *EMuxContext) ContextualizeRequest(r *http.Request, parentCtx context.Context, key string) *http.Request {
 	ctx := context.WithValue(parentCtx, key, emc)
