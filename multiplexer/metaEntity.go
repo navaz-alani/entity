@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/navaz-alani/entity"
+	"github.com/navaz-alani/entity/fieldName"
 )
 
 /*
@@ -70,25 +71,13 @@ const (
 	AxisFieldToken rune = 'a'
 )
 
+/*
+HandleTokens defines the set of tokens which can be used in
+the entity.HandleTag of a struct field for classification.
+*/
 var HandleTokens = []rune{
 	CreationFieldsToken,
 	AxisFieldToken,
-}
-
-/*
-requestID returns the fieldName to expect when parsing for this
-field in incoming request JSON payloads.
-
-TODO: a general requestID with priority function
-*/
-func requestID(field *reflect.StructField) string {
-	if tag := field.Tag.Get(entity.JSONTag); tag != "" && tag != "-" {
-		return tag
-	} else if tag := field.Tag.Get(entity.BSONTag); tag != "" && tag != "-" {
-		return tag
-	} else {
-		return field.Name
-	}
 }
 
 /*
@@ -120,7 +109,7 @@ func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensed
 		newField := &condensedField{
 			Name:      field.Name,
 			Type:      nil,
-			RequestID: requestID(&field),
+			RequestID: fieldName.ByPriority(field, fieldName.PriorityJsonBson),
 		}
 
 		if classes[tok] == nil {
@@ -137,5 +126,4 @@ func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensed
 			classes[tok] = append(classes[tok], newField)
 		}
 	}
-
 }

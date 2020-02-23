@@ -164,7 +164,7 @@ func Create(db *mongo.Database, definitions ...interface{}) (*EntityMux, error) 
 			return nil, entityErrors.DuplicateTag(entity.IDTag, defType.Name())
 		}
 
-		defEntity.Optimize()
+		_ = defEntity.Optimize()
 	}
 
 	return newMux, nil
@@ -226,7 +226,6 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 			for i := 0; i < len(creationFields); i++ {
 				field := creationFields[i]
 
-				// check that the payload contains this field
 				if fieldVal := req[field.RequestID]; fieldVal != "" {
 					f := preProcessedEntity.Elem().FieldByName(field.Name)
 					if !f.CanSet() {
@@ -257,11 +256,18 @@ func writeToField(field reflect.Value, data interface{}) (err error) {
 		}
 	}()
 
+	/*
+		Do not need to support pointers because an Entity has database handles.
+		Pointers stored in databases would make no sense and therefore there is
+		no pointer case in this type switch.
+	*/
 	switch field.Kind() {
 	case reflect.String:
 		field.SetString(data.(string))
-	case reflect.Int:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		field.SetInt(data.(int64))
+	case reflect.Float32, reflect.Float64:
+		field.SetFloat(data.(float64))
 	case reflect.Bool:
 		field.SetBool(data.(bool))
 	default:
