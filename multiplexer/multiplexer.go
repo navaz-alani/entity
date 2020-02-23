@@ -91,6 +91,16 @@ func (em *EntityMux) Collection(entityID string) *mongo.Collection {
 }
 
 /*
+E returns the Entity corresponding to the entityID given.
+*/
+func (em *EntityMux) E(entityID string) *entity.Entity {
+	if meta := em.Entities[entityID]; meta != nil {
+		return meta.Entity
+	}
+	return nil
+}
+
+/*
 Create uses the given definitions to create an EntityMux which manages the
 corresponding Entities. The definitions are expected to be an array of
 empty/zero struct Types. For example, consider the User entity defined in
@@ -236,9 +246,10 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 			}
 
 			muxCtx := eMuxContext.Create()
-			muxCtx.Set(eMuxContext.EMuxKey, preProcessedEntity.Interface())
+			muxCtx.Set(meta.EntityID, preProcessedEntity.Interface())
 
-			next(w, muxCtx.ContextualizeRequest(r, context.Background(), meta.EntityID), ps)
+			reqWithCtx := muxCtx.ContextualizeRequest(r, context.Background(), eMuxContext.EMuxKey)
+			next(w, reqWithCtx, ps)
 		}
 	}
 
