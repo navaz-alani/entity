@@ -1,3 +1,8 @@
+/*
+Package fieldName is used for selecting field names with
+varying priority levels. Names are selected from the
+non-empty values of the JSON and BSON tags.
+*/
 package fieldName
 
 import (

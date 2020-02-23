@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	JSONTag string = "json"
 	BSONTag string = "bson"
 	/*
 		AxisTag is a tag used for tagging fields as
@@ -289,7 +288,7 @@ func (e *Entity) Optimize() error {
 			continue
 		}
 
-		var fieldName = fieldName.ByPriority(field, fieldName.PriorityBsonJson)
+		var key = fieldName.ByPriority(field, fieldName.PriorityBsonJson)
 
 		var indexType string
 		if !(indexTag == "" || indexTag == "-") {
@@ -299,7 +298,7 @@ func (e *Entity) Optimize() error {
 			indexType = "text"
 		}
 
-		keys = append(keys, bson.E{Key: fieldName, Value: indexType})
+		keys = append(keys, bson.E{Key: key, Value: indexType})
 	}
 
 	if len(keys) == 0 {
