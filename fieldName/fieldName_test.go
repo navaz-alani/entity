@@ -1,8 +1,10 @@
-package fieldName
+package fieldName_test
 
 import (
 	"reflect"
 	"testing"
+
+	fName "github.com/navaz-alani/entity/fieldName"
 )
 
 type TestStruct struct {
@@ -13,13 +15,13 @@ type TestStruct struct {
 func TestByPriorityAllTags(t *testing.T) {
 	TSField1 := reflect.TypeOf(TestStruct{}).Field(0)
 
-	if res := ByPriority(TSField1, PriorityBsonJson); res != TSField1.Tag.Get("bson") {
+	if res := fName.ByPriority(TSField1, fName.PriorityBsonJson); res != TSField1.Tag.Get("bson") {
 		t.Fail()
 	}
-	if res := ByPriority(TSField1, PriorityJsonBson); res != TSField1.Tag.Get("json") {
+	if res := fName.ByPriority(TSField1, fName.PriorityJsonBson); res != TSField1.Tag.Get("json") {
 		t.Fail()
 	}
-	if res := ByPriority(TSField1, Priority{Tags: []string{}}); res != TSField1.Name {
+	if res := fName.ByPriority(TSField1, fName.Priority{Tags: []string{}}); res != TSField1.Name {
 		t.Fail()
 	}
 }
@@ -27,13 +29,13 @@ func TestByPriorityAllTags(t *testing.T) {
 func TestByPriorityMissingTags(t *testing.T) {
 	TSField2 := reflect.TypeOf(TestStruct{}).Field(1)
 
-	if res := ByPriority(TSField2, PriorityBsonJson); res != TSField2.Tag.Get("json") {
+	if res := fName.ByPriority(TSField2, fName.PriorityBsonJson); res != TSField2.Tag.Get("json") {
 		t.Fail()
 	}
-	if res := ByPriority(TSField2, PriorityJsonBson); res != TSField2.Tag.Get("json") {
+	if res := fName.ByPriority(TSField2, fName.PriorityJsonBson); res != TSField2.Tag.Get("json") {
 		t.Fail()
 	}
-	if res := ByPriority(TSField2, Priority{Tags: []string{}}); res != TSField2.Name {
+	if res := fName.ByPriority(TSField2, fName.Priority{Tags: []string{}}); res != TSField2.Name {
 		t.Fail()
 	}
 }
