@@ -39,10 +39,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"reflect"
 
-	"github.com/julienschmidt/httprouter"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -67,16 +67,6 @@ type EntityMux struct {
 		In the Entities map, the key is the EntityID.
 	*/
 	Entities map[string]*metaEntity
-	/*
-		Router is the httprouter.Router on which the
-		EntityMux configuration has been set-up; other
-		than that, it's just a new httprouter.Router.
-
-		Once an EntityMux has been created, the client
-		can use this pointer to further configure the router,
-		and then serve at a later point.
-	*/
-	Router *httprouter.Router
 }
 
 /*
@@ -202,7 +192,7 @@ NOTE: This functionality does not yet support embedding of Entity
 types. This can be achieved through linking instead. This is a
 feature which has been planned for implementation.
 */
-func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.Handle) httprouter.Handle, error) {
+func (em *EntityMux) CreationMiddleware(entityID string) (func(next http.Handler) http.Handler, error) {
 	var meta *metaEntity
 	if m := em.Entities[entityID]; m.EntityID == "" {
 		return nil, entityErrors.IncompleteEntityMetadata
@@ -210,8 +200,13 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 		meta = m
 	}
 
-	handle := func(next httprouter.Handle) httprouter.Handle {
-		return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	creationFields := meta.FieldClassifications[CreationFieldsToken]
+	if len(creationFields) == 0 {
+		return nil, entityErrors.NoClassificationFields
+	}
+
+	handle := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Decode the incoming JSON payload
 			var req map[string]interface{}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -231,9 +226,6 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 			entityType := meta.Entity.SchemaDefinition
 			preProcessedEntity := reflect.New(entityType)
 
-			creationFields := meta.FieldClassifications[CreationFieldsToken]
-
-			// Compare the fields in the struct
 			for i := 0; i < len(creationFields); i++ {
 				field := creationFields[i]
 
@@ -247,11 +239,11 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 			}
 
 			muxCtx := muxContext.Create()
-			muxCtx.Set(meta.EntityID, preProcessedEntity.Interface())
+			_ = muxCtx.Set(meta.EntityID, preProcessedEntity.Interface())
 
 			reqWithCtx := muxCtx.EmbedCtx(r, context.Background())
-			next(w, reqWithCtx, ps)
-		}
+			next.ServeHTTP(w, reqWithCtx)
+		})
 	}
 
 	return handle, nil
@@ -267,6 +259,7 @@ func (em *EntityMux) writeToField(field reflect.Value, data interface{}) (err er
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v", r)
+			log.Print(err)
 		}
 	}()
 
@@ -274,6 +267,8 @@ func (em *EntityMux) writeToField(field reflect.Value, data interface{}) (err er
 		Do not need to support pointers because an Entity has database handles.
 		Pointers stored in databases would make no sense and therefore there is
 		no pointer case in this switch.
+
+		TODO: even int in json are parsed as float64 so this needs to be handled
 	*/
 	switch field.Kind() {
 	case reflect.String:
