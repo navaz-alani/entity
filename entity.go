@@ -10,8 +10,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
+	"github.com/navaz-alani/entity/eField"
 	"github.com/navaz-alani/entity/entityErrors"
-	"github.com/navaz-alani/entity/fieldName"
 	"github.com/navaz-alani/entity/spec"
 )
 
@@ -54,15 +54,15 @@ func TypeOf(entity interface{}) reflect.Type {
 }
 
 /*
-Filter uses the axis tags in a struct field to
+Filter uses the axis tags in a struct eField to
 create a BSON map which can be used to filter out
 an entity from a collection.
 
-The filter field is chosen with the following priority:
+The filter eField is chosen with the following priority:
 BSON tag "_id", Axis tag "true" (then BSON, JSON tags)
-and lastly the field name.
+and lastly the eField name.
 
-Note that the field with the BSON tag "_id" must be of
+Note that the eField with the BSON tag "_id" must be of
 type primitive.ObjectID so that comparison succeeds.
 */
 func Filter(entity interface{}) bson.M {
@@ -76,7 +76,7 @@ func Filter(entity interface{}) bson.M {
 		if tag := field.Tag.Get(BSONTag); tag == "_id" && filterValue != primitive.NilObjectID {
 			return bson.M{"_id": filterValue}
 		} else if tag := field.Tag.Get(AxisTag); tag == "true" && filterValue != "" {
-			var filterFieldName = fieldName.ByPriority(field, fieldName.PriorityBsonJson)
+			var filterFieldName = eField.NameByPriority(field, eField.PriorityBsonJson)
 			return bson.M{filterFieldName: filterValue}
 		}
 	}
@@ -88,8 +88,8 @@ func Filter(entity interface{}) bson.M {
 ToBSON returns a BSON map representing the given entity.
 The given entity is expected to be of struct kind.
 
-When converting, to BSON, field names are selected with
-the following priority: BSON tag, JSON tag, field name
+When converting, to BSON, eField names are selected with
+the following priority: BSON tag, JSON tag, eField name
 from the struct.
 */
 func ToBSON(entity interface{}) bson.M {
@@ -104,7 +104,7 @@ func ToBSON(entity interface{}) bson.M {
 			continue
 		}
 
-		var fName = fieldName.ByPriority(field, fieldName.PriorityBsonJson)
+		var fName = eField.NameByPriority(field, eField.PriorityBsonJson)
 
 		bsonEncoding[fName] = v.Field(i).Interface()
 	}
@@ -117,7 +117,7 @@ Entity is a type which is used to store
 information about a collection of entities. It is
 used to manage Entities and ensure persistence.
 
-The SchemaDefinition field's contents is used to
+The SchemaDefinition eField's contents is used to
 generate a validator for the collection. This is
 done using "validate" tags which allow deeper
 schema specification.
@@ -269,9 +269,9 @@ Optimize is a function that creates indexes for the axis fields
 in the underlying EntityDefinition type.
 
 Optimize searches for "index" tags in the fields of the type
-underlying the EntityDefinition. A field with with an "index" tag
-is optimized. The IndexModel entry for this field has the Key
-corresponding to the BSON/JSON/field name (in that priority) and
+underlying the EntityDefinition. A eField with with an "index" tag
+is optimized. The IndexModel entry for this eField has the Key
+corresponding to the BSON/JSON/eField name (in that priority) and
 value corresponding to the "index" tag value if non-empty and
 a default index type of "text".
 */
@@ -281,20 +281,20 @@ func (e *Entity) Optimize() error {
 	for i := 0; i < e.SchemaDefinition.NumField(); i++ {
 		field := e.SchemaDefinition.Field(i)
 
-		// Ignore field if IndexTag not set
+		// Ignore eField if IndexTag not set
 		indexTag := field.Tag.Get(IndexTag)
 		axisTag := field.Tag.Get(AxisTag)
 		if !(indexTag == "true" && axisTag == "true") {
 			continue
 		}
 
-		var key = fieldName.ByPriority(field, fieldName.PriorityBsonJson)
+		var key = eField.NameByPriority(field, eField.PriorityBsonJson)
 
 		var indexType string
 		if !(indexTag == "" || indexTag == "-") {
 			indexType = indexTag
 		} else {
-			// TODO: infer index type from field type
+			// TODO: infer index type from eField type
 			indexType = "text"
 		}
 

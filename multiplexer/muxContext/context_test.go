@@ -1,4 +1,4 @@
-package eMuxContext_test
+package muxContext_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
-	muxCtx "github.com/navaz-alani/entity/multiplexer/eMuxContext"
+	muxCtx "github.com/navaz-alani/entity/multiplexer/muxContext"
 )
 
 type TestUser struct {
@@ -17,8 +17,9 @@ type TestUser struct {
 	Email string             `json:"email" axis:"true" index:"text" _hd_:"c"`
 }
 
-type TestReqData struct {}
-func (td TestReqData) Read(p []byte)(n int, err error) {
+type TestReqData struct{}
+
+func (td TestReqData) Read(p []byte) (n int, err error) {
 	return 1, nil
 }
 
@@ -77,9 +78,9 @@ func TestEMuxContext_RetrieveStructPtr(t *testing.T) {
 	}
 }
 
-func  TestEMuxContext_ContextualizeRequest(t *testing.T) {
-	req, _ := http.NewRequest("GET","test.com",TestReqData{})
-	reqWithCtx := mux.ContextualizeRequest(req,context.TODO(), muxCtx.EMuxKey)
+func TestEMuxContext_ContextualizeRequest(t *testing.T) {
+	req, _ := http.NewRequest("GET", "test.com", TestReqData{})
+	reqWithCtx := mux.ContextualizeRequest(req, context.TODO(), muxCtx.EMuxKey)
 
 	mux, _ := reqWithCtx.Context().Value(muxCtx.EMuxKey).(*muxCtx.EMuxContext)
 	usr := mux.Retrieve(keyStruct).(*TestUser)

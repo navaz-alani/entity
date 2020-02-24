@@ -12,7 +12,7 @@ var (
 	/*
 		UndefinedAxis is an error which signifies that an Entity's
 		axis fields are undefined. This could be raised, for example,
-		when attempting to Filter for an Entity whose ID field is
+		when attempting to Filter for an Entity whose ID eField is
 		primitive.NilObjectID and all axis fields are zeroed- in such
 		a case, no Filter may be created.
 	*/

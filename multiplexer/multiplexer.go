@@ -1,13 +1,13 @@
 /*
 Package multiplexer defines an EntityMux type which is basically
 a multiplexer for Entity types.
-It uses struct field tags in Entity definitions in order to
+It uses struct eField tags in Entity definitions in order to
 create database collections, middleware for request pre-processing
 and more.
 
 Tags
 
-Here are the field tags that the EntityMux uses:
+Here are the eField tags that the EntityMux uses:
 
 entity.IDTag - This tag is used to give a name to an Entity.
 This name specifies the mongo.Collection that will be created
@@ -18,19 +18,19 @@ amongst the Entity types that the EntityMux manages.
 entity.HandleTag - This tag is used to provide configurations
 for middleware generation. The value for this tag is a string
 containing configuration tokens. These tokens are single characters
-(runes) which can be used to classify a field. For example, the
+(runes) which can be used to classify a eField. For example, the
 CreationFieldsToken token can be used used to specify which
 fields should be parsed from an http.Response body for the
 middleware generation.
 
 entity.AxisTag - This tag is used to specify which fields can be
 considered to be unique (to an Entity) within a collection.
-The tag value which indicates that a field is an axis field is
+The tag value which indicates that a eField is an axis eField is
 the string "true"-- all other values are rejected.
 
 entity.IndexTag - This tag is used to specify the fields for which
 an index needs to be built in the database collection. This is used
-hand in hand with the entity.Axis tag; in order for a field's index
+hand in hand with the entity.Axis tag; in order for a eField's index
 to be constructed, both these tags have to be set to "true".
 */
 package multiplexer
@@ -48,7 +48,8 @@ import (
 
 	"github.com/navaz-alani/entity"
 	"github.com/navaz-alani/entity/entityErrors"
-	"github.com/navaz-alani/entity/multiplexer/eMuxContext"
+	"github.com/navaz-alani/entity/multiplexer/muxContext"
+	"github.com/navaz-alani/entity/multiplexer/muxHandle"
 )
 
 /*
@@ -131,7 +132,7 @@ After each collection has been created and linked to the respective Entity,
 the Entity's Optimize() method is called to index the axis fields which have
 been marked for indexing.
 */
-func Create(db *mongo.Database, definitions ...interface{}) (*EntityMux, error) {
+func Create(db muxHandle.DBHandle, definitions ...interface{}) (*EntityMux, error) {
 	if db == nil {
 		return nil, entityErrors.DBUninitialized
 	}
@@ -187,14 +188,14 @@ derive a template of an Entity from an API request.
 The creation fields for the Entity corresponding to the given entityID
 are used to pre-populate the response context with an "auto-filled"
 Entity.
-For each creation field, the first non-empty value of JSON/BSON/field name
+For each creation eField, the first non-empty value of JSON/BSON/eField name
 is used to check the incoming request payload for a corresponding value.
-This means that if the JSONTag is defined for the field, it will be assumed
-to be the corresponding fieldName in the JSON payload. Otherwise, the BSONTag
-is checked next. If the BSONTag is also empty, the field's name is used.
+This means that if the JSONTag is defined for the eField, it will be assumed
+to be the corresponding eField in the JSON payload. Otherwise, the BSONTag
+is checked next. If the BSONTag is also empty, the eField's name is used.
 
 The returned function is middleware which can be used on an httprouter.Router
-so that when a request is received by the client's httprouter.Handle, an
+so that when a request is received by the client's httprouter.DBHandle, an
 auto-completed version of the entity is present in the request context.
 
 NOTE: This functionality does not yet support embedding of Entity
@@ -241,14 +242,14 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 					if !f.CanSet() {
 						continue
 					}
-					_ = writeToField(f, fieldVal)
+					_ = em.writeToField(f, fieldVal)
 				}
 			}
 
-			muxCtx := eMuxContext.Create()
+			muxCtx := muxContext.Create()
 			muxCtx.Set(meta.EntityID, preProcessedEntity.Interface())
 
-			reqWithCtx := muxCtx.ContextualizeRequest(r, context.Background(), eMuxContext.EMuxKey)
+			reqWithCtx := muxCtx.ContextualizeRequest(r, context.Background(), muxContext.EMuxKey)
 			next(w, reqWithCtx, ps)
 		}
 	}
@@ -257,10 +258,12 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 }
 
 /*
-writeToField takes a field value and attempts to set
+writeToField takes a eField value and attempts to set
 its value to the given data.
+This function will NEVER write to a eField which stores
+a pointer kind.
 */
-func writeToField(field reflect.Value, data interface{}) (err error) {
+func (em *EntityMux) writeToField(field reflect.Value, data interface{}) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v", r)
@@ -270,7 +273,7 @@ func writeToField(field reflect.Value, data interface{}) (err error) {
 	/*
 		Do not need to support pointers because an Entity has database handles.
 		Pointers stored in databases would make no sense and therefore there is
-		no pointer case in this type switch.
+		no pointer case in this switch.
 	*/
 	switch field.Kind() {
 	case reflect.String:
@@ -284,11 +287,20 @@ func writeToField(field reflect.Value, data interface{}) (err error) {
 	default:
 		field.Set(reflect.ValueOf(data))
 	}
+
+	/*
+		TODO: embedding entities (read below)
+		Loop through the existing entities and check for an
+		embedded eField. Use that eField's type in order to
+		determine the embedded Entity.
+		The use eField.Set(reflect.ValueOf(data))
+	*/
+
 	return nil
 }
 
 /*
-CollectionValidator uses the given Type to access field
+CollectionValidator uses the given Type to access eField
 tags for the struct and create a collection validator to
 be used for this struct.
 

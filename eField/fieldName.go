@@ -1,9 +1,9 @@
 /*
-Package fieldName is used for selecting field names with
+Package eField is used for selecting eField names with
 varying priority levels. Names are selected from the
 non-empty values of the JSON and BSON tags.
 */
-package fieldName
+package eField
 
 import (
 	"reflect"
@@ -16,7 +16,7 @@ const (
 
 /*
 Priority is a type used to define the order of
-preference of available field name options.
+preference of available eField name options.
 */
 type Priority struct {
 	Tags []string
@@ -30,13 +30,13 @@ var (
 )
 
 /*
-ByPriority returns the name of the field using the priority
+NameByPriority returns the name of the eField using the priority
 p given.
-When the tags in p.Tags have been exhausted, the field's name
+When the tags in p.Tags have been exhausted, the eField's name
 is returned. Therefore this function is guaranteed to return a
-name for the field.
+name for the eField.
 */
-func ByPriority(field reflect.StructField, p Priority) string {
+func NameByPriority(field reflect.StructField, p Priority) string {
 	for _, tagName := range p.Tags {
 		if tag := field.Tag.Get(tagName); tag != "" && tag != "-" {
 			return tag

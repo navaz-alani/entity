@@ -1,9 +1,9 @@
 /*
-Package eMuxContext defines a simple context that can be used
+Package muxContext defines a simple context that can be used
 with HTTP requests to easily store multiple pieces of information
 within the same http.Request context.
 */
-package eMuxContext
+package muxContext
 
 import (
 	"context"
@@ -29,6 +29,7 @@ Create returns a pointer to an empty EMuxContext.
 */
 func Create() *EMuxContext {
 	payloadMap := make(map[string]interface{})
+
 	return &EMuxContext{
 		Payloads: payloadMap,
 	}
