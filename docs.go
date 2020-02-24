@@ -15,7 +15,7 @@ much more efficient.
 
 Axis Policy
 
-An axis is defined as a field in an Entity which
+An axis is defined as a eField in an Entity which
 can be assumed to be unique. This is important when creating
 collection indexes and creating Query/Update/Delete filters.
 The Axis Policy ensures data integrity by enforcing that all
@@ -23,9 +23,9 @@ Entities within a collection have unique axis values.
 
 This Policy is especially useful when querying elements for
 Read/Update/Delete operations. The client benefits through the
-ability to specify whether a field is an axis, using the "axis"
-tag, in the struct field. This tag can be set to "true" to enforce
-it as an axis field.
+ability to specify whether a eField is an axis, using the "axis"
+tag, in the struct eField. This tag can be set to "true" to enforce
+it as an axis eField.
 
 Getting started
 

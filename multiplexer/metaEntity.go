@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/navaz-alani/entity"
-	"github.com/navaz-alani/entity/fieldName"
+	"github.com/navaz-alani/entity/eField"
 )
 
 /*
@@ -14,14 +14,14 @@ which is commonly used/is important within the context of this
 package.
 */
 type condensedField struct {
-	// Name is the field's field name.
+	// Name is the eField's eField name.
 	Name string
-	// Type is the reflection type of the field.
+	// Type is the reflection type of the eField.
 	Type reflect.Type
 	/*
-		RequestID is a string which specifies the fieldName to
-		expect when parsing JSON for this field.
-		It can be equal to the Name field.
+		RequestID is a string which specifies the eField to
+		expect when parsing JSON for this eField.
+		It can be equal to the Name eField.
 	*/
 	RequestID string
 	Value     interface{}
@@ -40,14 +40,14 @@ type metaEntity struct {
 	*/
 	EntityID string
 	/*
-		FieldClassifications maps a field classification to
+		FieldClassifications maps a eField classification to
 		a slice of pointers to condensedFields.
 	*/
 	FieldClassifications map[rune][]*condensedField
 }
 
 /*
-   The following constants define the tokens for field
+   The following constants define the tokens for eField
    classifications in a metaEntity. These tokens are to be
    used within the context of the entity.HandleTag.
 */
@@ -73,7 +73,7 @@ const (
 
 /*
 HandleTokens defines the set of tokens which can be used in
-the entity.HandleTag of a struct field for classification.
+the entity.HandleTag of a struct eField for classification.
 */
 var HandleTokens = []rune{
 	CreationFieldsToken,
@@ -95,10 +95,10 @@ func classifyFields(defType reflect.Type) map[rune][]*condensedField {
 }
 
 /*
-classifyHandleTags classifies the given field by its handle tags.
-For every tag that the field matches, a pointer to a condensedField
-representation of the given field is added to the corresponding
-tag's field array in the given class map.
+classifyHandleTags classifies the given eField by its handle tags.
+For every tag that the eField matches, a pointer to a condensedField
+representation of the given eField is added to the corresponding
+tag's eField array in the given class map.
 
 If an entity.IDTag is encountered, the collectionID is reset. This
 means that the last entity.IDTag will specify the value of the
@@ -109,7 +109,7 @@ func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensed
 		newField := &condensedField{
 			Name:      field.Name,
 			Type:      nil,
-			RequestID: fieldName.ByPriority(field, fieldName.PriorityJsonBson),
+			RequestID: eField.NameByPriority(field, eField.PriorityJsonBson),
 		}
 
 		if classes[tok] == nil {

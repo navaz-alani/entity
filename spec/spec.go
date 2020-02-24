@@ -18,18 +18,18 @@ constructing queries, as well as when specifying
 changes.
 
 Ensure that Specs intended for update operations
-have the zero value for the QueryOperator field
+have the zero value for the QueryOperator eField
 and vice versa.
 */
 type ESpec struct {
 	/*
-		Field is the database field-name to constrain
+		Field is the database eField-name to constrain
 		the search
 	*/
-	Field string `json:"field"`
+	Field string `json:"eField"`
 	/*
 		Target specifies the value to query in the
-		constrained field
+		constrained eField
 	*/
 	Target interface{} `json:"target"`
 	/*
@@ -63,7 +63,7 @@ func (s *ESpec) ToBSON() bson.M {
 
 /*
 ToUpdateSpec returns a BSON map which can be used
-as an update document. The ESpec's Operator field
+as an update document. The ESpec's Operator eField
 must be a valid Mongo update operator.
 
 The following update operators are used in the context
