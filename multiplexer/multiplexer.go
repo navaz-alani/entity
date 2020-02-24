@@ -249,7 +249,7 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next httprouter.H
 			muxCtx := muxContext.Create()
 			muxCtx.Set(meta.EntityID, preProcessedEntity.Interface())
 
-			reqWithCtx := muxCtx.ContextualizeRequest(r, context.Background(), muxContext.EMuxKey)
+			reqWithCtx := muxCtx.EmbedCtx(r, context.Background())
 			next(w, reqWithCtx, ps)
 		}
 	}
