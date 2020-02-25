@@ -38,8 +38,6 @@ package multiplexer
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 	"reflect"
 
@@ -122,7 +120,7 @@ After each collection has been created and linked to the respective Entity,
 the Entity's Optimize() method is called to index the axis fields which have
 been marked for indexing.
 */
-func Create(db muxHandle.DBHandle, definitions ...interface{}) (*EntityMux, error) {
+func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, error) {
 	if db == nil {
 		return nil, entityErrors.DBUninitialized
 	}
@@ -185,7 +183,7 @@ to be the corresponding eField in the JSON payload. Otherwise, the BSONTag
 is checked next. If the BSONTag is also empty, the eField's name is used.
 
 The returned function is middleware which can be used on an httprouter.Router
-so that when a request is received by the client's httprouter.DBHandle, an
+so that when a request is received by the client's httprouter.DBHandler, an
 auto-completed version of the entity is present in the request context.
 
 NOTE: This functionality does not yet support embedding of Entity
@@ -214,6 +212,7 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next http.Handler
 				return
 			}
 
+			// TODO: extract this loop and use recursion for embedding entities
 			/*
 				This block processes each of the creation fields for this
 				Entity and copies their values in the request payload to a
@@ -258,8 +257,7 @@ a pointer kind.
 func (em *EntityMux) writeToField(field reflect.Value, data interface{}) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("%v", r)
-			log.Print(err)
+			err =  entityErrors.InvalidDataType
 		}
 	}()
 

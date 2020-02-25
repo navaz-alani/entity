@@ -10,14 +10,14 @@ import (
 )
 
 /*
-DBHandle is an interface which defines the behaviour
+DBHandler is an interface which defines the behaviour
 of a database handle required by the multiplexer.
 
 This definition helps make the multiplexer testable,
 as well as constrain the multiplexer's capabilities
 towards the underlying database.
 */
-type DBHandle interface {
+type DBHandler interface {
 	/*
 		Collection is a method required by the multiplexer
 		to obtain handles for persistent storage for Entities.
