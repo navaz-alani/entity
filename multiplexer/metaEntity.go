@@ -9,58 +9,54 @@ import (
 	"github.com/navaz-alani/entity/entityErrors"
 )
 
-/*
-TypeMap is a type used to perform a reverse lookup for an
-Entity by type.
-*/
-type TypeMap map[reflect.Type]string
+type (
+	/*
+	   metaEntity is a parsed version of an Entity's
+	   struct tags.
+	   It stores information that is frequently needed.
+	*/
+	metaEntity struct {
+		Entity *entity.Entity
+		/*
+			EntityID is the value of the first non-empty
+			entity.IDTag value.
+		*/
+		EntityID string
+		/*
+			FieldClassifications maps a eField classification to
+			a slice of pointers to condensedFields.
+		*/
+		FieldClassifications map[rune][]*condensedField
+	}
 
-/*
-condensedField is a shorthand representation of the information
-which is commonly used/is important within the context of this
-package.
-*/
-type condensedField struct {
-	// Name is the eField's eField name.
-	Name string
-	// Type is the reflection type of the eField.
-	Type reflect.Type
 	/*
-		RequestID is a string which specifies the eField to
-		expect when parsing JSON for this eField.
-		It can be equal to the Name eField.
+	   condensedField is a shorthand representation of the information
+	   which is commonly used/is important within the context of this
+	   package.
 	*/
-	RequestID string
-	/*
-		Value is used to store the collection name that this
-		field specifies.
-	*/
-	Value string
-	/*
-		EmbeddedEntity is used to store an internal reference to
-		the Entity whose type this field specifies.
-	*/
-	EmbeddedEntity *metaEntity
-}
-
-/*
-   metaEntity is a parsed version of an Entity's
-   struct tags.
-   It stores information that is frequently needed.
-*/
-type metaEntity struct {
-	Entity *entity.Entity
-	/*
-		EntityID is the value of the first non-empty
-		entity.IDTag value.
-	*/
-	EntityID string
-	/*
-		FieldClassifications maps a eField classification to
-		a slice of pointers to condensedFields.
-	*/
-	FieldClassifications map[rune][]*condensedField
-}
+	condensedField struct {
+		// Name is the eField's eField name.
+		Name string
+		// Type is the reflection type of the eField.
+		Type reflect.Type
+		/*
+			RequestID is a string which specifies the eField to
+			expect when parsing JSON for this eField.
+			It can be equal to the Name eField.
+		*/
+		RequestID string
+		/*
+			Value is used to store the collection name that this
+			field specifies.
+		*/
+		Value string
+		/*
+			EmbeddedEntity is used to store an internal reference to
+			the Entity whose type this field specifies.
+		*/
+		EmbeddedEntity *metaEntity
+	}
+)
 
 /*
    The following constants define the tokens for eField
@@ -69,20 +65,21 @@ type metaEntity struct {
 */
 const (
 	/*
-		CollectionIDToken maps to an array containing a
-		single (or none at all) pointer to a condensedField
-		whose RequestID is the Entity's collectionName in the
-		database.
+		EntityIDToken maps to an array containing a
+		single pointer (or none at all) to a condensedField
+		whose RequestID is the Entity's EntityID. This is
+		used within the creation stage.
 	*/
-	CollectionIDToken rune = '*'
+	EntityIDToken rune = '*'
 	/*
-		AxisFieldToken is maps to an array containing fields which
+		AxisFieldToken maps to an array containing fields which
 		are tagged as axis fields.
 	*/
 	AxisFieldToken rune = 'a'
 	/*
 		CreationFieldsToken maps to an array containing fields
-		which were specified to be provided in an http.Request.
+		which were specified to be provided in an http.Request
+		for creating an instance of an Entity.
 	*/
 	CreationFieldsToken rune = 'c'
 )
@@ -98,7 +95,7 @@ var HandleTokens = []rune{
 
 /*
 classifyFields is a function which iterates over the fields of
-the given Type and classifies them by their HandleTags.
+the given Type and classifies them by their HandleTag tokens.
 */
 func classifyFields(defType reflect.Type) map[rune][]*condensedField {
 	classifications := map[rune][]*condensedField{}
@@ -132,13 +129,17 @@ func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensed
 			classes[tok] = make([]*condensedField, 0)
 		}
 
-		if tag := field.Tag.Get(entity.IDTag); tag != "" && tag != "-" {
+		if tag := field.Tag.Get(eField.IDTag); tag != "" && tag != "-" {
+			/*
+				No need to check if tag starts with "!" because that will
+				be done in the creation stage.
+			*/
 			newField.Value = tag
-			classes[CollectionIDToken] = make([]*condensedField, 0)
-			classes[CollectionIDToken] = append(classes[CollectionIDToken], newField)
+			classes[EntityIDToken] = make([]*condensedField, 0)
+			classes[EntityIDToken] = append(classes[EntityIDToken], newField)
 		}
 
-		if tag := field.Tag.Get(entity.HandleTag); strings.ContainsAny(tag, string(tok)) {
+		if tag := field.Tag.Get(eField.HandleTag); strings.ContainsAny(tag, string(tok)) {
 			classes[tok] = append(classes[tok], newField)
 		}
 	}
@@ -146,7 +147,10 @@ func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensed
 
 /*
 writeToField takes a eField value and attempts to set
-its value to the given data.
+its value to the given data. If the given data cannot
+successfully be assigned to the given field, a
+entityErrors.InvalidDataType error is returned.
+
 This function will NEVER write to a eField which stores
 a pointer kind.
 */

@@ -1,7 +1,7 @@
 /*
-Package eField is used for selecting eField names with
-varying priority levels. Names are selected from the
-non-empty values of the JSON and BSON tags.
+Package eField provides definitions and functions which
+are used during internal operations on reflect.StructField
+types.
 */
 package eField
 
@@ -9,6 +9,9 @@ import (
 	"reflect"
 )
 
+/*
+These are tags which are related to the field's name.
+*/
 const (
 	JSONTag string = "json"
 	BSONTag string = "bson"
@@ -22,6 +25,9 @@ type Priority struct {
 	Tags []string
 }
 
+/*
+These are priorities for choosing a field name.
+*/
 var (
 	// Choose first of BSON tag, JSON tag, Field name
 	PriorityJsonBson = Priority{Tags: []string{JSONTag, BSONTag}}

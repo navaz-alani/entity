@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/navaz-alani/entity"
+	"github.com/navaz-alani/entity/eField"
 	"github.com/navaz-alani/entity/entityErrors"
 	"github.com/navaz-alani/entity/multiplexer/muxContext"
 	"github.com/navaz-alani/entity/multiplexer/muxHandle"
@@ -26,19 +27,32 @@ and verification.
 See the Create function for more information about the
 EntityMux initialization.
 */
-type EntityMux struct {
+type (
+	EntityMux struct {
+		/*
+			Entities is a collection of Entities which are
+			used in an application.
+			In the Entities map, the key is the EntityID.
+		*/
+		Entities EntityMap
+		/*
+			TypeMap provides a way of performing a reverse
+			lookup for EntityID by a reflect.Type
+		*/
+		TypeMap TypeMap
+	}
+
 	/*
-		Entities is a collection of Entities which are
-		used in an application.
-		In the Entities map, the key is the EntityID.
+		EntityMap is a type used to store Entities for look-up by
+		their EntityID.
 	*/
-	Entities map[string]*metaEntity
+	EntityMap map[string]*metaEntity
 	/*
-		TypeMap provides a way of performing a reverse
-		lookup for EntityID by a reflect.Type
+		TypeMap is a type used to perform a reverse lookup for an
+		Entity by type of an instance.
 	*/
-	TypeMap TypeMap
-}
+	TypeMap map[reflect.Type]string
+)
 
 /*
 Collection returns a pointer to the underlying mongo.Collection
@@ -89,7 +103,8 @@ Remember, when instantiating an Entity, it is important to have a defined
 location for persistent storage. In this case, it is a *mongo.Collection.
 For each definition, a collection in the database is initialized iff the IDTag
 does NOT start with a "!". The name of the collection created is exactly the
-same as the definition's EntityID (last IDTag value).
+same as the definition's EntityID (last IDTag value). Note, also, that the "!"
+used when avoiding collection creation does NOT could as part of the EntityID.
 
 Entities for which a database collection has been created are then indexed
 against their axis fields which have been marked for indexing. A field can be
@@ -121,9 +136,9 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, err
 		var EntityID string
 
 		// Extract collection name
-		collectionNameClassification := fieldClassifications[CollectionIDToken]
+		collectionNameClassification := fieldClassifications[EntityIDToken]
 		if len(collectionNameClassification) == 0 || collectionNameClassification[0].Value == "" {
-			return nil, entityErrors.NoTag(entity.IDTag, defType.Name())
+			return nil, entityErrors.NoTag(eField.IDTag, defType.Name())
 		} else if collectionNameClassification[0].Value[0] != '!' {
 			EntityID = collectionNameClassification[0].Value
 		} else {
@@ -157,7 +172,7 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, err
 			newMux.Entities[EntityID] = meta
 			newMux.TypeMap[defType] = EntityID
 		} else {
-			return nil, entityErrors.DuplicateTag(entity.IDTag, defType.Name())
+			return nil, entityErrors.DuplicateTag(eField.IDTag, defType.Name())
 		}
 
 		// run indexing
@@ -166,9 +181,7 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, err
 		}
 	}
 
-	// complete internal field linking
 	newMux.link()
-
 	return newMux, nil
 }
 
@@ -203,12 +216,13 @@ func (em *EntityMux) link() {
 }
 
 /*
-CreationMiddleware returns httprouter middleware which can be used to
-derive a template of an Entity from an API request.
+CreationMiddleware returns middleware which can be used to
+derive a template of an Entity/CRUD operation from an API request.
 
 The creation fields for the Entity corresponding to the given entityID
-are used to pre-populate the response context with an "auto-filled"
+are used to pre-populate the response context with an pre-populated"
 Entity.
+
 For each creation eField, the first non-empty value of JSON/BSON/eField name
 is used to check the incoming request payload for a corresponding value.
 This means that if the JSONTag is defined for the eField, it will be assumed
@@ -272,6 +286,15 @@ It basically creates a JSON schema for the given type.
 TODO: This function still has to be implemented.
 */
 func CollectionValidator(_ reflect.Type) *options.CollectionOptions {
+	/*
+		Implementation Details:
+
+		Use tags to populate JSON schema for each field of the current type.
+		When an embedded field is reached, recursively compute the JSON schema.
+		A base case is guaranteed if types are not recursive.
+
+		JSON schema fields to populate: BSON type, required
+	*/
 	return nil
 }
 
