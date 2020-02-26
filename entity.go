@@ -15,30 +15,6 @@ import (
 	"github.com/navaz-alani/entity/spec"
 )
 
-const (
-	BSONTag string = "bson"
-	/*
-		AxisTag is a tag used for tagging fields as
-		axis fields for a particular struct.
-	*/
-	AxisTag string = "axis"
-	/*
-		IndexTag is used for tagging fields whose index
-		needs to be created.
-	*/
-	IndexTag string = "index"
-	/*
-		IDTag is used for providing Entity identifiers
-		for an EntityMux.
-	*/
-	IDTag string = "_id_"
-	/*
-		HandleTag is used to provide configuration for
-		generating pre-processing middleware.
-	*/
-	HandleTag string = "_hd_"
-)
-
 /*
 TypeOf returns an EntityDefinition which can be used with
 an Entity to define a schema.
@@ -73,9 +49,9 @@ func Filter(entity interface{}) bson.M {
 		field := t.Field(i)
 		filterValue := v.Field(i).Interface()
 
-		if tag := field.Tag.Get(BSONTag); tag == "_id" && filterValue != primitive.NilObjectID {
+		if tag := field.Tag.Get(eField.BSONTag); tag == "_id" && filterValue != primitive.NilObjectID {
 			return bson.M{"_id": filterValue}
-		} else if tag := field.Tag.Get(AxisTag); tag == "true" && filterValue != "" {
+		} else if tag := field.Tag.Get(eField.AxisTag); tag == "true" && filterValue != "" {
 			var filterFieldName = eField.NameByPriority(field, eField.PriorityBsonJson)
 			return bson.M{filterFieldName: filterValue}
 		}
@@ -100,7 +76,7 @@ func ToBSON(entity interface{}) bson.M {
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		if tag := field.Tag.Get(BSONTag); tag == "_id" {
+		if tag := field.Tag.Get(eField.BSONTag); tag == "_id" {
 			continue
 		}
 
@@ -282,8 +258,8 @@ func (e *Entity) Optimize() error {
 		field := e.SchemaDefinition.Field(i)
 
 		// Ignore eField if IndexTag not set
-		indexTag := field.Tag.Get(IndexTag)
-		axisTag := field.Tag.Get(AxisTag)
+		indexTag := field.Tag.Get(eField.IndexTag)
+		axisTag := field.Tag.Get(eField.AxisTag)
 		if !(indexTag == "true" && axisTag == "true") {
 			continue
 		}
