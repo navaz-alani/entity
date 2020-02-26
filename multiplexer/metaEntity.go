@@ -6,7 +6,14 @@ import (
 
 	"github.com/navaz-alani/entity"
 	"github.com/navaz-alani/entity/eField"
+	"github.com/navaz-alani/entity/entityErrors"
 )
+
+/*
+TypeMap is a type used to perform a reverse lookup for an
+Entity by type.
+*/
+type TypeMap map[reflect.Type]string
 
 /*
 condensedField is a shorthand representation of the information
@@ -24,7 +31,16 @@ type condensedField struct {
 		It can be equal to the Name eField.
 	*/
 	RequestID string
-	Value     interface{}
+	/*
+		Value is used to store the collection name that this
+		field specifies.
+	*/
+	Value string
+	/*
+		EmbeddedEntity is used to store an internal reference to
+		the Entity whose type this field specifies.
+	*/
+	EmbeddedEntity *metaEntity
 }
 
 /*
@@ -60,15 +76,15 @@ const (
 	*/
 	CollectionIDToken rune = '*'
 	/*
-		CreationFieldsToken maps to an array containing fields
-		which were specified to be provided in an http.Request.
-	*/
-	CreationFieldsToken rune = 'c'
-	/*
 		AxisFieldToken is maps to an array containing fields which
 		are tagged as axis fields.
 	*/
 	AxisFieldToken rune = 'a'
+	/*
+		CreationFieldsToken maps to an array containing fields
+		which were specified to be provided in an http.Request.
+	*/
+	CreationFieldsToken rune = 'c'
 )
 
 /*
@@ -104,11 +120,13 @@ If an entity.IDTag is encountered, the collectionID is reset. This
 means that the last entity.IDTag will specify the value of the
 entity's mongoDB collection.
 */
-func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensedField) {
+func classifyHandleTags(field reflect.StructField,
+	classes map[rune][]*condensedField) {
 	for _, tok := range HandleTokens {
+		//todo....
 		newField := &condensedField{
 			Name:      field.Name,
-			Type:      nil,
+			Type:      field.Type,
 			RequestID: eField.NameByPriority(field, eField.PriorityJsonBson),
 		}
 
@@ -126,4 +144,38 @@ func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensed
 			classes[tok] = append(classes[tok], newField)
 		}
 	}
+}
+
+/*
+writeToField takes a eField value and attempts to set
+its value to the given data.
+This function will NEVER write to a eField which stores
+a pointer kind.
+*/
+func writeToField(field *reflect.Value, data interface{}) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = entityErrors.InvalidDataType
+		}
+	}()
+
+	/*
+		Do not need to support pointers because an Entity has database handles.
+		Pointers stored in databases would make no sense and therefore there is
+		no pointer case in this switch.
+	*/
+	switch field.Kind() {
+	default:
+		field.Set(reflect.ValueOf(data))
+	case reflect.String:
+		field.SetString(data.(string))
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		field.SetInt(data.(int64))
+	case reflect.Float32, reflect.Float64:
+		field.SetFloat(data.(float64))
+	case reflect.Bool:
+		field.SetBool(data.(bool))
+	}
+
+	return nil
 }

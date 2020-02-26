@@ -38,6 +38,7 @@ package multiplexer
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"reflect"
 
@@ -65,6 +66,11 @@ type EntityMux struct {
 		In the Entities map, the key is the EntityID.
 	*/
 	Entities map[string]*metaEntity
+	/*
+		TypeMap provides a way of performing a reverse
+		lookup for EntityID by a reflect.Type
+	*/
+	TypeMap TypeMap
 }
 
 /*
@@ -92,12 +98,12 @@ func (em *EntityMux) E(entityID string) *entity.Entity {
 /*
 Create uses the given definitions to create an EntityMux which manages the
 corresponding Entities. The definitions are expected to be an array of
-empty/zero struct Types. For example, consider the User entity defined in
+empty/zero struct Types. For example, consider the UserEmbed entity defined in
 the "Getting Started" section of the documentation of the entity package.
-In order to create an EntityMux which manages the User Entity, the following
+In order to create an EntityMux which manages the UserEmbed Entity, the following
 line suffices:
 
-	eMux, err := multiplexer.Create(dbPtr, User{})
+	eMux, err := multiplexer.Create(dbPtr, UserEmbed{})
 
 When internally registering Entities, a unique identifier is needed to
 refer to Entities. This identifier is called the EntityID and is defined using
@@ -126,47 +132,82 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, err
 	}
 
 	entityMap := make(map[string]*metaEntity)
-	newMux := &EntityMux{Entities: entityMap}
+	typeMap := make(map[reflect.Type]string)
+	newMux := &EntityMux{Entities: entityMap, TypeMap: typeMap}
 
+	// populate entity metadata
 	for i := 0; i < len(definitions); i++ {
 		defType := reflect.TypeOf(definitions[i])
 		fieldClassifications := classifyFields(defType)
 
-		var collectionName string
+		// Extract collection name
+		var EntityID string
 		collectionNameClassification := fieldClassifications[CollectionIDToken]
 
 		if len(collectionNameClassification) == 0 || collectionNameClassification[0].Value == "" {
 			return nil, entityErrors.NoTag(entity.IDTag, defType.Name())
 		} else {
-			collectionName, _ = collectionNameClassification[0].Value.(string)
+			EntityID = collectionNameClassification[0].Value
 		}
-
+		// create collection
 		var defCollection *mongo.Collection
 		if collectionOptions := CollectionValidator(defType); collectionOptions != nil {
-			defCollection = db.Collection(collectionName, collectionOptions)
+			defCollection = db.Collection(EntityID, collectionOptions)
 		} else {
-			defCollection = db.Collection(collectionName)
+			defCollection = db.Collection(EntityID)
 		}
 
+		// register  entity
 		defEntity := &entity.Entity{
 			SchemaDefinition: defType,
 			PStorage:         defCollection,
 		}
 
-		if newMux.Entities[collectionName] == nil {
-			newMux.Entities[collectionName] = &metaEntity{
+		if newMux.Entities[EntityID] == nil {
+			meta := &metaEntity{
 				Entity:               defEntity,
-				EntityID:             collectionName,
+				EntityID:             EntityID,
 				FieldClassifications: fieldClassifications,
 			}
+
+			newMux.Entities[EntityID] = meta
+			newMux.TypeMap[defType] = EntityID
 		} else {
 			return nil, entityErrors.DuplicateTag(entity.IDTag, defType.Name())
 		}
 
+		// run indexing
 		_ = defEntity.Optimize()
 	}
 
+	// complete internal field linking
+	newMux.link()
+
 	return newMux, nil
+}
+
+/*
+link creates internal representations of embedded struct field types
+for parsing in middleware.
+*/
+func (em *EntityMux) link() {
+	for _, meta := range em.Entities {
+		// todo: append other field classes to `fields` for linking too
+		fields := meta.FieldClassifications[CreationFieldsToken]
+
+		for i := 0; i < len(fields); i++ {
+			field := fields[i]
+
+			// check if embedded type is registered as an Entity
+			embedID := em.TypeMap[field.Type]
+			if embedID == "" {
+				continue
+			}
+
+			// create reference to embedded Entity metadata.
+			field.EmbeddedEntity = em.Entities[embedID]
+		}
+	}
 }
 
 /*
@@ -198,8 +239,7 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next http.Handler
 		meta = m
 	}
 
-	creationFields := meta.FieldClassifications[CreationFieldsToken]
-	if len(creationFields) == 0 {
+	if len(meta.FieldClassifications[CreationFieldsToken]) == 0 {
 		return nil, entityErrors.NoClassificationFields
 	}
 
@@ -212,33 +252,16 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next http.Handler
 				return
 			}
 
-			// TODO: extract this loop and use recursion for embedding entities
-			/*
-				This block processes each of the creation fields for this
-				Entity and copies their values in the request payload to a
-				reflect.Value which will be serialized as an interface, ready
-				for the client to retrieve through a type assertion.
-
-				If the type assertion fails, the request data is probably
-				malformed and the client can handle this.
-			*/
-			entityType := meta.Entity.SchemaDefinition
-			preProcessedEntity := reflect.New(entityType)
-
-			for i := 0; i < len(creationFields); i++ {
-				field := creationFields[i]
-
-				if fieldVal := req[field.RequestID]; fieldVal != "" {
-					f := preProcessedEntity.Elem().FieldByName(field.Name)
-					if !f.CanSet() {
-						continue
-					}
-					_ = em.writeToField(f, fieldVal)
-				}
+			preProcessedEntity, err := em.processCreationPayload(em.Entities[entityID], req)
+			if err != nil {
+				// JSON pre-processing failed
+				//		TODO: add error in context for inspection purposes
+				next.ServeHTTP(w, r)
+				return
 			}
 
 			muxCtx := muxContext.Create()
-			_ = muxCtx.Set(meta.EntityID, preProcessedEntity.Interface())
+			_ = muxCtx.Set(meta.EntityID, &preProcessedEntity)
 
 			reqWithCtx := muxCtx.EmbedCtx(r, context.Background())
 			next.ServeHTTP(w, reqWithCtx)
@@ -249,56 +272,79 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next http.Handler
 }
 
 /*
-writeToField takes a eField value and attempts to set
-its value to the given data.
-This function will NEVER write to a eField which stores
-a pointer kind.
-*/
-func (em *EntityMux) writeToField(field reflect.Value, data interface{}) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err =  entityErrors.InvalidDataType
-		}
-	}()
-
-	/*
-		Do not need to support pointers because an Entity has database handles.
-		Pointers stored in databases would make no sense and therefore there is
-		no pointer case in this switch.
-
-		TODO: even int in json are parsed as float64 so this needs to be handled
-	*/
-	switch field.Kind() {
-	case reflect.String:
-		field.SetString(data.(string))
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		field.SetInt(data.(int64))
-	case reflect.Float32, reflect.Float64:
-		field.SetFloat(data.(float64))
-	case reflect.Bool:
-		field.SetBool(data.(bool))
-	default:
-		field.Set(reflect.ValueOf(data))
-	}
-
-	/*
-		TODO: embedding entities (read below)
-		Loop through the existing entities and check for an
-		embedded eField. Use that eField's type in order to
-		determine the embedded Entity.
-		The use eField.Set(reflect.ValueOf(data))
-	*/
-
-	return nil
-}
-
-/*
 CollectionValidator uses the given Type to access eField
 tags for the struct and create a collection validator to
 be used for this struct.
 
+It basically creates a JSON schema for the given type.
 TODO: This function still has to be implemented.
 */
 func CollectionValidator(_ reflect.Type) *options.CollectionOptions {
 	return nil
+}
+
+/*
+processCreationPayload parses the given JSON payload with respect to the
+entity corresponding to the given entityID.
+*/
+func (em *EntityMux) processCreationPayload(meta *metaEntity, payload map[string]interface{}) (reflect.Value, error) {
+	var preProcessedEntity reflect.Value
+	var creationFields []*condensedField
+
+	if meta == nil {
+		return reflect.ValueOf(nil), entityErrors.InvalidEntityID
+	} else {
+		preProcessedEntity = reflect.New(meta.Entity.SchemaDefinition)
+		creationFields = meta.FieldClassifications[CreationFieldsToken]
+	}
+
+	/*
+		This block processes each of the creation fields for this
+		Entity and copies their values in the request payload to a
+		reflect.Value which will be serialized as an interface, ready
+		for the client to retrieve through a type assertion.
+
+		If the type assertion fails, the request data is probably
+		malformed and the client can handle this.
+
+		TODO: in json int is parsed as float64; needs to be handled
+	*/
+	for i := 0; i < len(creationFields); i++ {
+		field := creationFields[i]
+
+		if fieldVal := payload[field.RequestID]; fieldVal != "" {
+			// check write status
+			f := preProcessedEntity.Elem().FieldByName(field.Name)
+			if !f.CanSet() {
+				continue
+			}
+
+			data := fieldVal
+
+			if field.EmbeddedEntity != nil {
+				// todo: extract embedded payload
+				embeddedPayload, ok := fieldVal.(map[string]interface{})
+				if !ok {
+					log.Println("embedded payload invalid")
+					continue
+				}
+
+				embedValue, err := em.processCreationPayload(field.EmbeddedEntity, embeddedPayload)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				data = embedValue.Elem().Interface()
+			}
+
+			err := writeToField(&f, data)
+			switch err {
+			case entityErrors.InvalidDataType:
+				log.Println(err)
+				continue
+			}
+		}
+	}
+
+	return preProcessedEntity, nil
 }

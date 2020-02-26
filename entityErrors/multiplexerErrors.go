@@ -19,7 +19,9 @@ var (
 	*/
 	IncompleteEntityMetadata = fmt.Errorf("insufficient entity metadata")
 	NoClassificationFields   = fmt.Errorf("no classification fields")
-	InvalidDataType = fmt.Errorf("data type invalid invalid")
+	InvalidDataType          = fmt.Errorf("data type invalid invalid")
+	InvalidEntityID          = fmt.Errorf("entityID invalid")
+	EmbeddedEntity           = fmt.Errorf("entity embedded")
 )
 
 /*
