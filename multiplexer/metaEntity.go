@@ -120,10 +120,8 @@ If an entity.IDTag is encountered, the collectionID is reset. This
 means that the last entity.IDTag will specify the value of the
 entity's mongoDB collection.
 */
-func classifyHandleTags(field reflect.StructField,
-	classes map[rune][]*condensedField) {
+func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensedField) {
 	for _, tok := range HandleTokens {
-		//todo....
 		newField := &condensedField{
 			Name:      field.Name,
 			Type:      field.Type,

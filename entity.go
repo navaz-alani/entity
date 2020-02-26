@@ -21,12 +21,12 @@ const (
 		AxisTag is a tag used for tagging fields as
 		axis fields for a particular struct.
 	*/
-	AxisTag string = "axis"
+	AxisTag string = "_ax_"
 	/*
 		IndexTag is used for tagging fields whose index
 		needs to be created.
 	*/
-	IndexTag string = "index"
+	IndexTag string = "_ix_"
 	/*
 		IDTag is used for providing Entity identifiers
 		for an EntityMux.

@@ -1,38 +1,3 @@
-/*
-Package multiplexer defines an EntityMux type which is basically
-a multiplexer for Entity types.
-It uses struct eField tags in Entity definitions in order to
-create database collections, middleware for request pre-processing
-and more.
-
-Tags
-
-Here are the eField tags that the EntityMux uses:
-
-entity.IDTag - This tag is used to give a name to an Entity.
-This name specifies the mongo.Collection that will be created
-in the database for an Entity. It is also used by EntityMux to
-internally work with Entity types. This value must be unique
-amongst the Entity types that the EntityMux manages.
-
-entity.HandleTag - This tag is used to provide configurations
-for middleware generation. The value for this tag is a string
-containing configuration tokens. These tokens are single characters
-(runes) which can be used to classify a eField. For example, the
-CreationFieldsToken token can be used used to specify which
-fields should be parsed from an http.Response body for the
-middleware generation.
-
-entity.AxisTag - This tag is used to specify which fields can be
-considered to be unique (to an Entity) within a collection.
-The tag value which indicates that a eField is an axis eField is
-the string "true"-- all other values are rejected.
-
-entity.IndexTag - This tag is used to specify the fields for which
-an index needs to be built in the database collection. This is used
-hand in hand with the entity.Axis tag; in order for a eField's index
-to be constructed, both these tags have to be set to "true".
-*/
 package multiplexer
 
 import (
@@ -53,11 +18,13 @@ import (
 
 /*
 EntityMux is a multiplexer for Entities.
-It is designed to manage initialization for multiple
-Entity types from their struct definitions.
+It is meant to manage multiple Entities within an application.
+This involves creating and linking a database collection for
+Entities, generating pre-processing middleware for CRUD requests,
+and verification.
 
-See the Create function for more information about
-EntityMux initialization steps.
+See the Create function for more information about the
+EntityMux initialization.
 */
 type EntityMux struct {
 	/*
@@ -74,9 +41,13 @@ type EntityMux struct {
 }
 
 /*
-Collection returns a pointer to the mongo collection
-that the entity identified by the given entityID is
-using for persistent storage.
+Collection returns a pointer to the underlying mongo.Collection
+that the entity corresponding to the given entityID is using for
+persistent storage.
+
+Alternatively, a handle to this collection can be obtained by
+using the go.mongodb.org/mongo-driver directly with the collection
+name as the EntityID given.
 
 To modify the options for the collection, the client can
 use the db pointer used during initialization
@@ -87,6 +58,9 @@ func (em *EntityMux) Collection(entityID string) *mongo.Collection {
 
 /*
 E returns the Entity corresponding to the entityID given.
+
+This Entity can be used normally to carry out CRUD operations
+for instances of the Entity.
 */
 func (em *EntityMux) E(entityID string) *entity.Entity {
 	if meta := em.Entities[entityID]; meta != nil {
@@ -98,12 +72,12 @@ func (em *EntityMux) E(entityID string) *entity.Entity {
 /*
 Create uses the given definitions to create an EntityMux which manages the
 corresponding Entities. The definitions are expected to be an array of
-empty/zero struct Types. For example, consider the UserEmbed entity defined in
+empty/zero struct Types. For example, consider the User entity defined in
 the "Getting Started" section of the documentation of the entity package.
-In order to create an EntityMux which manages the UserEmbed Entity, the following
+In order to create an EntityMux which manages the User Entity, the following
 line suffices:
 
-	eMux, err := multiplexer.Create(dbPtr, UserEmbed{})
+	eMux, err := multiplexer.Create(dbPtr, User{})
 
 When internally registering Entities, a unique identifier is needed to
 refer to Entities. This identifier is called the EntityID and is defined using
@@ -113,18 +87,21 @@ returned.
 
 Remember, when instantiating an Entity, it is important to have a defined
 location for persistent storage. In this case, it is a *mongo.Collection.
-For each definition, a collection in the database is initialized. The name of
-this collection is exactly the same as the definition's EntityID.
+For each definition, a collection in the database is initialized iff the IDTag
+does NOT start with a "!". The name of the collection created is exactly the
+same as the definition's EntityID (last IDTag value).
+
+Entities for which a database collection has been created are then indexed
+against their axis fields which have been marked for indexing. A field can be
+specified as an axis field by using the entity.AxisTag while index creation is
+specified using the entity.IndexTag. Only fields with the AxisTag set to "true"
+and a non-empty IndexTag are indexed.
 
 When initializing the collection, a schema validator is first created. If this
 is successful, the validator is injected as an option when creating the collection.
 Otherwise, the collection is created without a
 The validator also uses tags to generate schemas for validation. For more
 information, see the CollectionValidator function.
-
-After each collection has been created and linked to the respective Entity,
-the Entity's Optimize() method is called to index the axis fields which have
-been marked for indexing.
 */
 func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, error) {
 	if db == nil {
@@ -140,24 +117,31 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, err
 		defType := reflect.TypeOf(definitions[i])
 		fieldClassifications := classifyFields(defType)
 
-		// Extract collection name
+		createCollection := true
 		var EntityID string
-		collectionNameClassification := fieldClassifications[CollectionIDToken]
 
+		// Extract collection name
+		collectionNameClassification := fieldClassifications[CollectionIDToken]
 		if len(collectionNameClassification) == 0 || collectionNameClassification[0].Value == "" {
 			return nil, entityErrors.NoTag(entity.IDTag, defType.Name())
-		} else {
+		} else if collectionNameClassification[0].Value[0] != '!' {
 			EntityID = collectionNameClassification[0].Value
-		}
-		// create collection
-		var defCollection *mongo.Collection
-		if collectionOptions := CollectionValidator(defType); collectionOptions != nil {
-			defCollection = db.Collection(EntityID, collectionOptions)
 		} else {
-			defCollection = db.Collection(EntityID)
+			EntityID = collectionNameClassification[0].Value[1:]
+			createCollection = false
 		}
 
-		// register  entity
+		// create collection
+		var defCollection *mongo.Collection
+		if createCollection {
+			if collectionOptions := CollectionValidator(defType); collectionOptions != nil {
+				defCollection = db.Collection(EntityID, collectionOptions)
+			} else {
+				defCollection = db.Collection(EntityID)
+			}
+		}
+
+		// create & register entity
 		defEntity := &entity.Entity{
 			SchemaDefinition: defType,
 			PStorage:         defCollection,
@@ -177,7 +161,9 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, err
 		}
 
 		// run indexing
-		_ = defEntity.Optimize()
+		if EntityID != "" {
+			_ = defEntity.Optimize()
+		}
 	}
 
 	// complete internal field linking
@@ -198,8 +184,14 @@ func (em *EntityMux) link() {
 		for i := 0; i < len(fields); i++ {
 			field := fields[i]
 
-			// check if embedded type is registered as an Entity
-			embedID := em.TypeMap[field.Type]
+			var embedID string
+			switch field.Type.Kind() {
+			case reflect.Slice:
+				embedID = em.TypeMap[field.Type.Elem()]
+			case reflect.Struct:
+				embedID = em.TypeMap[field.Type]
+			}
+
 			if embedID == "" {
 				continue
 			}

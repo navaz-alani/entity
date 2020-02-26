@@ -34,6 +34,12 @@ type ENoDupID3 struct {
 	F2 int `json:"f_2" bson:"f2" _id_:"<new_id>"`
 }
 
+// no database collection needed
+type ENoDBColl struct {
+	// entityID will still be "no-coll"
+	F1 int `json:"f1" _id_:"!no-coll"`
+}
+
 // database type for mocking
 type TestDB struct{}
 
@@ -66,6 +72,17 @@ func TestCreateDupID(t *testing.T) {
 func TestCreateNoDupID(t *testing.T) {
 	_, err := Create(TestDB{}, EDupID2{}, ENoDupID3{})
 	if err != nil {
+		t.Fail()
+	}
+}
+
+func TestCreateNoCollection(t *testing.T) {
+	mux, err := Create(TestDB{}, ENoDBColl{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if coll := mux.Collection("no-coll"); coll != nil {
 		t.Fail()
 	}
 }

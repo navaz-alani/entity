@@ -37,4 +37,3 @@ var DummyUserEmbed = UserEmbed{
 }
 
 const dummyEmbedDataJSON = `{"tasks":{"name":"test task", "details":{"date":"ISO_DUMMY_DATE"}}}`
-
