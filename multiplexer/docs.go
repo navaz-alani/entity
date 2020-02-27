@@ -1,5 +1,5 @@
 /*
-Package multiplexer defines the EntityMux type which is basically
+Package multiplexer defines the EMux type which is basically
 a multiplexer for Entity types.
 
 The main goal is to enable users to be more productive by writing
@@ -28,13 +28,13 @@ to the multiplexer. These tags are discussed below.
 
 Tags
 
-Here are the eField tags that the EntityMux uses:
+Here are the eField tags that the EMux uses:
 
 entity.IDTag - This tag is used to give a name to an Entity.
 This name specifies the mongo.Collection that will be created
-in the database for an Entity. It is also used by EntityMux to
+in the database for an Entity. It is also used by EMux to
 internally work with Entity types. This value must be unique
-amongst the Entity types that the EntityMux manages.
+amongst the Entity types that the EMux manages.
 
 entity.HandleTag - This tag is used to provide configurations
 for middleware generation. The value for this tag is a string
