@@ -8,7 +8,6 @@ import (
 	"reflect"
 
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/navaz-alani/entity"
 	"github.com/navaz-alani/entity/eField"
@@ -18,17 +17,17 @@ import (
 )
 
 /*
-EntityMux is a multiplexer for Entities.
+EMux is a multiplexer for Entities.
 It is meant to manage multiple Entities within an application.
 This involves creating and linking a database collection for
 Entities, generating pre-processing middleware for CRUD requests,
 and verification.
 
 See the Create function for more information about the
-EntityMux initialization.
+EMux initialization.
 */
 type (
-	EntityMux struct {
+	EMux struct {
 		/*
 			Entities is a collection of Entities which are
 			used in an application.
@@ -66,7 +65,7 @@ name as the EntityID given.
 To modify the options for the collection, the client can
 use the db pointer used during initialization
 */
-func (em *EntityMux) Collection(entityID string) *mongo.Collection {
+func (em *EMux) Collection(entityID string) *mongo.Collection {
 	return em.Entities[entityID].Entity.PStorage
 }
 
@@ -76,7 +75,7 @@ E returns the Entity corresponding to the entityID given.
 This Entity can be used normally to carry out CRUD operations
 for instances of the Entity.
 */
-func (em *EntityMux) E(entityID string) *entity.Entity {
+func (em *EMux) E(entityID string) *entity.Entity {
 	if meta := em.Entities[entityID]; meta != nil {
 		return meta.Entity
 	}
@@ -84,11 +83,11 @@ func (em *EntityMux) E(entityID string) *entity.Entity {
 }
 
 /*
-Create uses the given definitions to create an EntityMux which manages the
+Create uses the given definitions to create an EMux which manages the
 corresponding Entities. The definitions are expected to be an array of
 empty/zero struct Types. For example, consider the User entity defined in
 the "Getting Started" section of the documentation of the entity package.
-In order to create an EntityMux which manages the User Entity, the following
+In order to create an EMux which manages the User Entity, the following
 line suffices:
 
 	eMux, err := multiplexer.Create(dbPtr, User{})
@@ -111,21 +110,15 @@ against their axis fields which have been marked for indexing. A field can be
 specified as an axis field by using the entity.AxisTag while index creation is
 specified using the entity.IndexTag. Only fields with the AxisTag set to "true"
 and a non-empty IndexTag are indexed.
-
-When initializing the collection, a schema validator is first created. If this
-is successful, the validator is injected as an option when creating the collection.
-Otherwise, the collection is created without a
-The validator also uses tags to generate schemas for validation. For more
-information, see the CollectionValidator function.
 */
-func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, error) {
+func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EMux, error) {
 	if db == nil {
 		return nil, entityErrors.DBUninitialized
 	}
 
 	entityMap := make(map[string]*metaEntity)
 	typeMap := make(map[reflect.Type]string)
-	newMux := &EntityMux{Entities: entityMap, TypeMap: typeMap}
+	newMux := &EMux{Entities: entityMap, TypeMap: typeMap}
 
 	// populate entity metadata
 	for i := 0; i < len(definitions); i++ {
@@ -149,11 +142,7 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, err
 		// create collection
 		var defCollection *mongo.Collection
 		if createCollection {
-			if collectionOptions := CollectionValidator(defType); collectionOptions != nil {
-				defCollection = db.Collection(EntityID, collectionOptions)
-			} else {
-				defCollection = db.Collection(EntityID)
-			}
+			defCollection = db.Collection(EntityID)
 		}
 
 		// create & register entity
@@ -189,7 +178,7 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EntityMux, err
 link creates internal representations of embedded struct field types
 for parsing in middleware.
 */
-func (em *EntityMux) link() {
+func (em *EMux) link() {
 	for _, meta := range em.Entities {
 		// todo: append other field classes to `fields` for linking too
 		fields := meta.FieldClassifications[CreationFieldsToken]
@@ -237,7 +226,7 @@ NOTE: This functionality does not yet support embedding of Entity
 types. This can be achieved through linking instead. This is a
 feature which has been planned for implementation.
 */
-func (em *EntityMux) CreationMiddleware(entityID string) (func(next http.Handler) http.Handler, error) {
+func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) http.Handler, error) {
 	var meta *metaEntity
 	if m := em.Entities[entityID]; m.EntityID == "" {
 		return nil, entityErrors.IncompleteEntityMetadata
@@ -278,31 +267,10 @@ func (em *EntityMux) CreationMiddleware(entityID string) (func(next http.Handler
 }
 
 /*
-CollectionValidator uses the given Type to access eField
-tags for the struct and create a collection validator to
-be used for this struct.
-
-It basically creates a JSON schema for the given type.
-TODO: This function still has to be implemented.
-*/
-func CollectionValidator(_ reflect.Type) *options.CollectionOptions {
-	/*
-		Implementation Details:
-
-		Use tags to populate JSON schema for each field of the current type.
-		When an embedded field is reached, recursively compute the JSON schema.
-		A base case is guaranteed if types are not recursive.
-
-		JSON schema fields to populate: BSON type, required
-	*/
-	return nil
-}
-
-/*
 processCreationPayload parses the given JSON payload with respect to the
 entity corresponding to the given entityID.
 */
-func (em *EntityMux) processCreationPayload(meta *metaEntity, payload map[string]interface{}) (reflect.Value, error) {
+func (em *EMux) processCreationPayload(meta *metaEntity, payload map[string]interface{}) (reflect.Value, error) {
 	var preProcessedEntity reflect.Value
 	var creationFields []*condensedField
 
@@ -337,7 +305,6 @@ func (em *EntityMux) processCreationPayload(meta *metaEntity, payload map[string
 			data := fieldVal
 
 			if field.EmbeddedEntity != nil {
-				// todo: extract embedded payload
 				embeddedPayload, ok := fieldVal.(map[string]interface{})
 				if !ok {
 					log.Println("embedded payload invalid")
@@ -352,7 +319,7 @@ func (em *EntityMux) processCreationPayload(meta *metaEntity, payload map[string
 				data = embedValue.Elem().Interface()
 			}
 
-			err := writeToField(&f, data)
+			err := eField.WriteToField(&f, data)
 			switch err {
 			case entityErrors.InvalidDataType:
 				log.Println(err)
