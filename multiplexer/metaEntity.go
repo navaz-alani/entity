@@ -56,10 +56,40 @@ type (
 		EmbeddedEntity Embedding
 	}
 
+	/*
+		Embedding is a type used to store information about a field's
+		data type. It contains flags used to indicate whether the field
+		type is another Entity managed by the multiplexer or whether
+		it is a collection-kind field.
+	*/
 	Embedding struct {
-		CCFlag bool
-		CType  reflect.Type
-		Meta   *metaEntity
+		// The first 2 flags handle indicate struct embeddings
+		/*
+			SFlag is a boolean representing whether a field
+			stores an internally managed Entity (kind struct).
+		*/
+		SFlag bool
+		/*
+			SType is the Entity type stored in a field.
+		*/
+		SType reflect.Type
+		/*
+			CFlag is a boolean representing whether a field
+			stores collection-type data (slice, array, ...)
+		*/
+
+		// Next 2 flags indicate collection embeddings
+		CFlag bool
+		/*
+			CType is the type of a singleton stored in this
+			field's collection.
+		*/
+		CType reflect.Type
+		/*
+			Meta is a pointer representing an internal link
+			to an internally managed Entity.
+		*/
+		Meta *metaEntity
 	}
 )
 
@@ -123,19 +153,24 @@ means that the last entity.IDTag will specify the value of the
 entity's mongoDB collection.
 */
 func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensedField) {
+	cFlag, cType := eField.CheckCollectionEmbedding(field)
+	sFlag, sType := eField.CheckStructEmbedding(field)
+
+	newField := &condensedField{
+		Name:      field.Name,
+		Type:      field.Type,
+		RequestID: eField.NameByPriority(field, eField.PriorityJsonBson),
+		EmbeddedEntity: Embedding{
+			// Collection flags
+			CFlag: cFlag,
+			CType: cType,
+			// Struct flags
+			SFlag: sFlag,
+			SType: sType,
+		},
+	}
+
 	for _, tok := range HandleTokens {
-		ccFlag, cType := eField.CheckCC(field)
-
-		newField := &condensedField{
-			Name:      field.Name,
-			Type:      field.Type,
-			RequestID: eField.NameByPriority(field, eField.PriorityJsonBson),
-			EmbeddedEntity: Embedding{
-				CCFlag: ccFlag,
-				CType:  cType,
-			},
-		}
-
 		if classes[tok] == nil {
 			classes[tok] = make([]*condensedField, 0)
 		}

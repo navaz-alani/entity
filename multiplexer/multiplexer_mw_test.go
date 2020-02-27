@@ -38,7 +38,11 @@ var requestTests = []reqTest{
 	},
 	{
 		[]interface{}{UserEmbed{}, Task{}, TaskDetails{}},
-		"user", dummyEmbedDataJSON, DummyUserEmbed,
+		"user-embed", dummyEmbedDataJSON, DummyUserEmbed,
+	},
+	{
+		[]interface{}{EmbedCollUser{}, Task{}, TaskDetails{}},
+		"user-embed-coll", dummyEmbedCollDataJSON, DummyEmbedCollUser,
 	},
 }
 
@@ -81,7 +85,7 @@ func EntityMux_CreationMiddlewareRequestParseTestHelper(t *testing.T, rt *reqTes
 			t.Fatal("context retrieval fail", data)
 		}
 
-		if !reflect.DeepEqual(data.Elem().Interface(), rt.ExpectedEntity) {
+		if !reflect.DeepEqual(data.Interface(), rt.ExpectedEntity) {
 			log.Print("got:      ", data.Elem().Interface())
 			log.Print("expected: ", rt.ExpectedEntity)
 			t.Fatal()
@@ -92,9 +96,9 @@ func EntityMux_CreationMiddlewareRequestParseTestHelper(t *testing.T, rt *reqTes
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 }
 
-/*
-Define tests
-*/
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Define tests
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 func TestEntityMux_CreationMiddlewareRequestParse(t *testing.T) {
 	EntityMux_CreationMiddlewareRequestParseTestHelper(t, &requestTests[0])
@@ -102,4 +106,8 @@ func TestEntityMux_CreationMiddlewareRequestParse(t *testing.T) {
 
 func TestEntityMux_CreationMiddlewareRequestParseEmbedded(t *testing.T) {
 	EntityMux_CreationMiddlewareRequestParseTestHelper(t, &requestTests[1])
+}
+
+func TestEntityMux_CreationMiddlewareRequestCollectionEmbed(t *testing.T) {
+	EntityMux_CreationMiddlewareRequestParseTestHelper(t, &requestTests[2])
 }
