@@ -42,3 +42,30 @@ func WriteToField(field *reflect.Value, data interface{}) (err error) {
 
 	return nil
 }
+
+/*
+CheckCollectionEmbedding returns whether the given field's type
+is a collection type (array, slice, ...) as well as the
+type of an element in the collection.
+*/
+func CheckCollectionEmbedding(field reflect.StructField) (bool, reflect.Type) {
+	switch field.Type.Kind() {
+	default:
+		return false, nil
+	case reflect.Slice, reflect.Array:
+		return true, field.Type.Elem()
+	}
+}
+
+/*
+CheckStructEmbedding returns whether the given field's type is
+of struct kind as well as the struct type stored in the field.
+*/
+func CheckStructEmbedding(field reflect.StructField) (bool, reflect.Type) {
+	switch field.Type.Kind() {
+	default:
+		return false, nil
+	case reflect.Struct:
+		return true, field.Type
+	}
+}

@@ -53,7 +53,36 @@ type (
 			EmbeddedEntity is used to store an internal reference to
 			the Entity whose type this field specifies.
 		*/
-		EmbeddedEntity *metaEntity
+		EmbeddedEntity Embedding
+	}
+
+	// TODO: merge CType and SType fields; only 1 can be defined at a time
+	/*
+		Embedding is a type used to store information about a field's
+		data type. It contains flags used to indicate whether the field
+		type is another Entity managed by the multiplexer or whether
+		it is a collection-kind field.
+	*/
+	Embedding struct {
+		/*
+			SFlag is a boolean representing whether a field
+			stores an internally managed Entity (kind struct).
+		*/
+		SFlag bool
+		/*
+			CFlag is a boolean representing whether a field
+			stores collection-type data (slice, array, ...)
+		*/
+		CFlag bool
+		/*
+			EmbeddedType specifies the field's embedded type.
+		*/
+		EmbeddedType reflect.Type
+		/*
+			Meta is a pointer representing an internal link
+			to an internally managed Entity.
+		*/
+		Meta *metaEntity
 	}
 )
 
@@ -117,13 +146,28 @@ means that the last entity.IDTag will specify the value of the
 entity's mongoDB collection.
 */
 func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensedField) {
-	for _, tok := range HandleTokens {
-		newField := &condensedField{
-			Name:      field.Name,
-			Type:      field.Type,
-			RequestID: eField.NameByPriority(field, eField.PriorityJsonBson),
-		}
+	cFlag, cType := eField.CheckCollectionEmbedding(field)
+	sFlag, sType := eField.CheckStructEmbedding(field)
 
+	var embeddedType reflect.Type
+	if cFlag {
+		embeddedType = cType
+	} else {
+		embeddedType = sType
+	}
+
+	newField := &condensedField{
+		Name:      field.Name,
+		Type:      field.Type,
+		RequestID: eField.NameByPriority(field, eField.PriorityJsonBson),
+		EmbeddedEntity: Embedding{
+			CFlag:        cFlag,
+			SFlag:        sFlag,
+			EmbeddedType: embeddedType,
+		},
+	}
+
+	for _, tok := range HandleTokens {
 		if classes[tok] == nil {
 			classes[tok] = make([]*condensedField, 0)
 		}

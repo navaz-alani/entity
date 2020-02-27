@@ -3,7 +3,6 @@ package multiplexer
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"reflect"
 
@@ -16,17 +15,17 @@ import (
 	"github.com/navaz-alani/entity/multiplexer/muxHandle"
 )
 
-/*
-EMux is a multiplexer for Entities.
-It is meant to manage multiple Entities within an application.
-This involves creating and linking a database collection for
-Entities, generating pre-processing middleware for CRUD requests,
-and verification.
-
-See the Create function for more information about the
-EMux initialization.
-*/
 type (
+	/*
+		EMux is a multiplexer for Entities.
+		It is meant to manage multiple Entities within an application.
+		This involves creating and linking a database collection for
+		Entities, generating pre-processing middleware for CRUD requests,
+		and verification.
+
+		See the Create function for more information about the
+		EMux initialization.
+	*/
 	EMux struct {
 		/*
 			Entities is a collection of Entities which are
@@ -187,10 +186,9 @@ func (em *EMux) link() {
 			field := fields[i]
 
 			var embedID string
-			switch field.Type.Kind() {
-			case reflect.Slice:
-				embedID = em.TypeMap[field.Type.Elem()]
-			case reflect.Struct:
+			if field.EmbeddedEntity.CFlag || field.EmbeddedEntity.SFlag {
+				embedID = em.TypeMap[field.EmbeddedEntity.EmbeddedType]
+			} else {
 				embedID = em.TypeMap[field.Type]
 			}
 
@@ -198,8 +196,8 @@ func (em *EMux) link() {
 				continue
 			}
 
-			// create reference to embedded Entity metadata.
-			field.EmbeddedEntity = em.Entities[embedID]
+			// create reference to embedded Entity metadata
+			field.EmbeddedEntity.Meta = em.Entities[embedID]
 		}
 	}
 }
@@ -228,7 +226,7 @@ feature which has been planned for implementation.
 */
 func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) http.Handler, error) {
 	var meta *metaEntity
-	if m := em.Entities[entityID]; m.EntityID == "" {
+	if m := em.Entities[entityID]; m == nil || m.EntityID == "" {
 		return nil, entityErrors.IncompleteEntityMetadata
 	} else {
 		meta = m
@@ -247,7 +245,7 @@ func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) htt
 				return
 			}
 
-			preProcessedEntity, err := em.processCreationPayload(em.Entities[entityID], req)
+			preProcessedEntity, err := em.createEntity(em.Entities[entityID], req)
 			if err != nil {
 				// JSON pre-processing failed
 				//		TODO: add error in context for inspection purposes
@@ -266,64 +264,73 @@ func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) htt
 	return handle, nil
 }
 
-/*
-processCreationPayload parses the given JSON payload with respect to the
-entity corresponding to the given entityID.
-*/
-func (em *EMux) processCreationPayload(meta *metaEntity, payload map[string]interface{}) (reflect.Value, error) {
+func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (reflect.Value, error) {
 	var preProcessedEntity reflect.Value
 	var creationFields []*condensedField
 
 	if meta == nil {
 		return reflect.ValueOf(nil), entityErrors.InvalidEntityID
 	} else {
-		preProcessedEntity = reflect.New(meta.Entity.SchemaDefinition)
+		preProcessedEntity = reflect.New(meta.Entity.SchemaDefinition).Elem()
 		creationFields = meta.FieldClassifications[CreationFieldsToken]
 	}
 
-	/*
-		This block processes each of the creation fields for this
-		Entity and copies their values in the request payload to a
-		reflect.Value which will be serialized as an interface, ready
-		for the client to retrieve through a type assertion.
+	for _, cf := range creationFields {
+		// check if there is data to be written to this field
+		if fieldData := payload[cf.RequestID]; fieldData != nil {
+			fieldToWrite := preProcessedEntity.FieldByName(cf.Name)
 
-		If the type assertion fails, the request data is probably
-		malformed and the client can handle this.
+			if cf.EmbeddedEntity.CFlag {
+				if cf.EmbeddedEntity.Meta == nil {
+					return preProcessedEntity, entityErrors.InvalidEntityLink
+				}
 
-		TODO: in json int is parsed as float64; needs to be handled
-	*/
-	for i := 0; i < len(creationFields); i++ {
-		field := creationFields[i]
-
-		if fieldVal := payload[field.RequestID]; fieldVal != "" {
-			// check write status
-			f := preProcessedEntity.Elem().FieldByName(field.Name)
-			if !f.CanSet() {
-				continue
-			}
-
-			data := fieldVal
-
-			if field.EmbeddedEntity != nil {
-				embeddedPayload, ok := fieldVal.(map[string]interface{})
+				// convert field's payload to slice of interfaces
+				writeData, ok := fieldData.([]interface{})
 				if !ok {
-					log.Println("embedded payload invalid")
-					continue
+					return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
 				}
 
-				embedValue, err := em.processCreationPayload(field.EmbeddedEntity, embeddedPayload)
-				if err != nil {
-					log.Println(err)
-					continue
+				// write each item individually
+				for i := 0; i < len(writeData); i++ {
+					writeItem := writeData[i]
+
+					// convert payload for recursive call
+					writeMap, ok := writeItem.(map[string]interface{})
+					if !ok {
+						return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
+					}
+
+					// recursively create entity for field
+					writeValue, err := em.createEntity(cf.EmbeddedEntity.Meta, writeMap)
+					if err != nil {
+						return preProcessedEntity, err
+					}
+
+					// append new value
+					fieldToWrite.Set(reflect.Append(fieldToWrite, writeValue))
 				}
-				data = embedValue.Elem().Interface()
+				continue
+			} else if cf.EmbeddedEntity.SFlag {
+				// convert payload for recursive call
+				writeData, ok := fieldData.(map[string]interface{})
+				if !ok {
+					return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
+				}
+
+				// recursively create entity for field
+				embedValue, err := em.createEntity(cf.EmbeddedEntity.Meta, writeData)
+				if err != nil {
+					return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
+				}
+
+				// set data to be written
+				fieldData = embedValue.Interface()
 			}
 
-			err := eField.WriteToField(&f, data)
-			switch err {
-			case entityErrors.InvalidDataType:
-				log.Println(err)
-				continue
+			// set data
+			if err := eField.WriteToField(&fieldToWrite, fieldData); err != nil {
+				return preProcessedEntity, err
 			}
 		}
 	}
