@@ -16,17 +16,17 @@ import (
 	"github.com/navaz-alani/entity/multiplexer/muxHandle"
 )
 
-/*
-EMux is a multiplexer for Entities.
-It is meant to manage multiple Entities within an application.
-This involves creating and linking a database collection for
-Entities, generating pre-processing middleware for CRUD requests,
-and verification.
-
-See the Create function for more information about the
-EMux initialization.
-*/
 type (
+	/*
+		EMux is a multiplexer for Entities.
+		It is meant to manage multiple Entities within an application.
+		This involves creating and linking a database collection for
+		Entities, generating pre-processing middleware for CRUD requests,
+		and verification.
+
+		See the Create function for more information about the
+		EMux initialization.
+	*/
 	EMux struct {
 		/*
 			Entities is a collection of Entities which are
@@ -187,19 +187,20 @@ func (em *EMux) link() {
 			field := fields[i]
 
 			var embedID string
-			switch field.Type.Kind() {
-			case reflect.Slice:
-				embedID = em.TypeMap[field.Type.Elem()]
-			case reflect.Struct:
+			if field.EmbeddedEntity.CCFlag {
+				embedID = em.TypeMap[field.EmbeddedEntity.CType]
+			} else {
 				embedID = em.TypeMap[field.Type]
+
 			}
 
 			if embedID == "" {
+				// nothing to internally link
 				continue
 			}
 
 			// create reference to embedded Entity metadata.
-			field.EmbeddedEntity = em.Entities[embedID]
+			field.EmbeddedEntity.Meta = em.Entities[embedID]
 		}
 	}
 }
@@ -296,22 +297,22 @@ func (em *EMux) processCreationPayload(meta *metaEntity, payload map[string]inte
 		field := creationFields[i]
 
 		if fieldVal := payload[field.RequestID]; fieldVal != "" {
-			// check write status
 			f := preProcessedEntity.Elem().FieldByName(field.Name)
 			if !f.CanSet() {
 				continue
 			}
 
 			data := fieldVal
+			meta := field.EmbeddedEntity.Meta
 
-			if field.EmbeddedEntity != nil {
+			if meta != nil {
 				embeddedPayload, ok := fieldVal.(map[string]interface{})
 				if !ok {
 					log.Println("embedded payload invalid")
 					continue
 				}
 
-				embedValue, err := em.processCreationPayload(field.EmbeddedEntity, embeddedPayload)
+				embedValue, err := em.processCreationPayload(meta, embeddedPayload)
 				if err != nil {
 					log.Println(err)
 					continue

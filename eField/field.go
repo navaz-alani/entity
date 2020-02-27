@@ -42,3 +42,17 @@ func WriteToField(field *reflect.Value, data interface{}) (err error) {
 
 	return nil
 }
+
+/*
+CheckCC returns whether the given field's type is a
+collection type (array, slice, ...) as well as the
+type of an element in the collection.
+*/
+func CheckCC(field reflect.StructField) (bool, reflect.Type) {
+	switch field.Type.Kind() {
+	default:
+		return false, nil
+	case reflect.Slice, reflect.Array:
+		return true, field.Type.Elem()
+	}
+}

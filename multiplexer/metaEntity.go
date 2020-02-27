@@ -53,7 +53,13 @@ type (
 			EmbeddedEntity is used to store an internal reference to
 			the Entity whose type this field specifies.
 		*/
-		EmbeddedEntity *metaEntity
+		EmbeddedEntity Embedding
+	}
+
+	Embedding struct {
+		CCFlag bool
+		CType  reflect.Type
+		Meta   *metaEntity
 	}
 )
 
@@ -118,10 +124,16 @@ entity's mongoDB collection.
 */
 func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensedField) {
 	for _, tok := range HandleTokens {
+		ccFlag, cType := eField.CheckCC(field)
+
 		newField := &condensedField{
 			Name:      field.Name,
 			Type:      field.Type,
 			RequestID: eField.NameByPriority(field, eField.PriorityJsonBson),
+			EmbeddedEntity: Embedding{
+				CCFlag: ccFlag,
+				CType:  cType,
+			},
 		}
 
 		if classes[tok] == nil {
