@@ -31,18 +31,25 @@ type reqTest struct {
 /*
 requestTests is an array of the reqTests to be carried out.
 */
-var requestTests = []reqTest{
+var requestTests = [...]reqTest{
 	{
 		[]interface{}{TestUser{}},
-		"user", DummyUserDataJSON, DummyUserData,
+		"user", DummyUserDataJSON,
+		DummyUserData,
 	},
 	{
 		[]interface{}{UserEmbed{}, Task{}, TaskDetails{}},
-		"user-embed", dummyEmbedDataJSON, DummyUserEmbed,
+		"user-embed", dummyEmbedDataJSON,
+		DummyUserEmbed,
 	},
 	{
 		[]interface{}{EmbedCollUser{}, Task{}, TaskDetails{}},
 		"user-embed-coll", dummyEmbedCollDataJSON, DummyEmbedCollUser,
+	},
+	{
+		[]interface{}{Project{}, TestSuite{}, TestCase{}},
+		"project", DummyProjectJSON,
+		DummyProject,
 	},
 }
 
@@ -110,4 +117,8 @@ func TestEntityMux_CreationMiddlewareRequestParseEmbedded(t *testing.T) {
 
 func TestEntityMux_CreationMiddlewareRequestCollectionEmbed(t *testing.T) {
 	EntityMux_CreationMiddlewareRequestParseTestHelper(t, &requestTests[2])
+}
+
+func TestEntityMux_CreationMiddlewareRequestCollectionsEmbedDeep(t *testing.T) {
+	EntityMux_CreationMiddlewareRequestParseTestHelper(t, &requestTests[3])
 }

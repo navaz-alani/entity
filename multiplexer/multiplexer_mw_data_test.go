@@ -36,7 +36,14 @@ var DummyUserEmbed = UserEmbed{
 	},
 }
 
-const dummyEmbedDataJSON = `{"tasks":{"name":"test task", "details":{"date":"ISO_DUMMY_DATE"}}}`
+const dummyEmbedDataJSON = `{
+  "tasks": {
+    "name": "test task",
+    "details": {
+      "date": "ISO_DUMMY_DATE"
+    }
+  }
+}`
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -53,4 +60,62 @@ var DummyEmbedCollUser = EmbedCollUser{
 	},
 }
 
-const dummyEmbedCollDataJSON = `{"tasks":[{"name":"test task", "details":{"date":"ISO_DUMMY_DATE"}}]}`
+const dummyEmbedCollDataJSON = `{
+  "tasks": [
+    {
+      "name": "test task",
+      "details": {
+        "date": "ISO_DUMMY_DATE"
+      }
+    }
+  ]
+}`
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Project test case management setup
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+type TestCase struct {
+	ID   string `json:"id" _id_:"test-case"`
+	Name string `json:"name" _hd_:"c"`
+}
+
+type TestSuite struct {
+	ID    string     `json:"id" _id_:"test-suite"`
+	Name  string     `json:"name" _hd_:"c"`
+	Tests []TestCase `json:"tests" _hd_:"c"`
+}
+
+type Project struct {
+	ID     string      `json:"id" _id_:"project"`
+	Name   string      `json:"name" _hd_:"c"`
+	Suites []TestSuite `json:"suites" _hd_:"c"`
+}
+
+var DummyProject = Project{
+	Name: "p1",
+	Suites: []TestSuite{
+		{
+			Name: "s1",
+			Tests: []TestCase{
+				{
+					Name: "s1t1",
+				},
+			},
+		},
+	},
+}
+
+var DummyProjectJSON = `{
+  "name": "p1",
+  "suites": [
+    {
+      "name": "s1",
+      "tests": [
+        {
+          "name": "s1t1"
+        }
+      ]
+    }
+  ]
+}`
