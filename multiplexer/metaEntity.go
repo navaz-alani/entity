@@ -56,6 +56,7 @@ type (
 		EmbeddedEntity Embedding
 	}
 
+	// TODO: merge CType and SType fields; only 1 can be defined at a time
 	/*
 		Embedding is a type used to store information about a field's
 		data type. It contains flags used to indicate whether the field
@@ -63,28 +64,20 @@ type (
 		it is a collection-kind field.
 	*/
 	Embedding struct {
-		// The first 2 flags handle indicate struct embeddings
 		/*
 			SFlag is a boolean representing whether a field
 			stores an internally managed Entity (kind struct).
 		*/
 		SFlag bool
 		/*
-			SType is the Entity type stored in a field.
-		*/
-		SType reflect.Type
-		/*
 			CFlag is a boolean representing whether a field
 			stores collection-type data (slice, array, ...)
 		*/
-
-		// Next 2 flags indicate collection embeddings
 		CFlag bool
 		/*
-			CType is the type of a singleton stored in this
-			field's collection.
+			EmbeddedType specifies the field's embedded type.
 		*/
-		CType reflect.Type
+		EmbeddedType reflect.Type
 		/*
 			Meta is a pointer representing an internal link
 			to an internally managed Entity.
@@ -156,17 +149,21 @@ func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensed
 	cFlag, cType := eField.CheckCollectionEmbedding(field)
 	sFlag, sType := eField.CheckStructEmbedding(field)
 
+	var embeddedType reflect.Type
+	if cFlag {
+		embeddedType = cType
+	} else {
+		embeddedType = sType
+	}
+
 	newField := &condensedField{
 		Name:      field.Name,
 		Type:      field.Type,
 		RequestID: eField.NameByPriority(field, eField.PriorityJsonBson),
 		EmbeddedEntity: Embedding{
-			// Collection flags
-			CFlag: cFlag,
-			CType: cType,
-			// Struct flags
-			SFlag: sFlag,
-			SType: sType,
+			CFlag:        cFlag,
+			SFlag:        sFlag,
+			EmbeddedType: embeddedType,
 		},
 	}
 

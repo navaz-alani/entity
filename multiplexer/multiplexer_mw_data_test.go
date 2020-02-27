@@ -76,12 +76,14 @@ const dummyEmbedCollDataJSON = `{
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 type TestCase struct {
-	ID   string `json:"id" _id_:"test-case"`
+	// do not create db collection
+	ID   string `json:"id" _id_:"!test-case"`
 	Name string `json:"name" _hd_:"c"`
 }
 
 type TestSuite struct {
-	ID    string     `json:"id" _id_:"test-suite"`
+	// do not create db collection
+	ID    string     `json:"id" _id_:"!test-suite"`
 	Name  string     `json:"name" _hd_:"c"`
 	Tests []TestCase `json:"tests" _hd_:"c"`
 }

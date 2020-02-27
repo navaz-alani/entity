@@ -3,7 +3,6 @@ package multiplexer
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"reflect"
 
@@ -187,10 +186,8 @@ func (em *EMux) link() {
 			field := fields[i]
 
 			var embedID string
-			if field.EmbeddedEntity.CFlag {
-				embedID = em.TypeMap[field.EmbeddedEntity.CType]
-			} else if field.EmbeddedEntity.SFlag {
-				embedID = em.TypeMap[field.EmbeddedEntity.SType]
+			if field.EmbeddedEntity.CFlag || field.EmbeddedEntity.SFlag {
+				embedID = em.TypeMap[field.EmbeddedEntity.EmbeddedType]
 			} else {
 				embedID = em.TypeMap[field.Type]
 			}
@@ -252,7 +249,6 @@ func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) htt
 			if err != nil {
 				// JSON pre-processing failed
 				//		TODO: add error in context for inspection purposes
-				log.Println("failed to create entity; ", err)
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -292,7 +288,6 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 				// convert field's payload to slice of interfaces
 				writeData, ok := fieldData.([]interface{})
 				if !ok {
-					log.Println("failed while converting to []interface{}")
 					return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
 				}
 
@@ -303,14 +298,12 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 					// convert payload for recursive call
 					writeMap, ok := writeItem.(map[string]interface{})
 					if !ok {
-						log.Println("failed while converting to map[string]interface{}")
 						return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
 					}
 
 					// recursively create entity for field
 					writeValue, err := em.createEntity(cf.EmbeddedEntity.Meta, writeMap)
 					if err != nil {
-						log.Println("failed to write collection to field", err)
 						return preProcessedEntity, err
 					}
 
@@ -322,14 +315,12 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 				// convert payload for recursive call
 				writeData, ok := fieldData.(map[string]interface{})
 				if !ok {
-					log.Println("failed while converting to map[string]interface{}")
 					return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
 				}
 
 				// recursively create entity for field
 				embedValue, err := em.createEntity(cf.EmbeddedEntity.Meta, writeData)
 				if err != nil {
-					log.Println("failed to write struct to field", err)
 					return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
 				}
 
@@ -339,8 +330,6 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 
 			// set data
 			if err := eField.WriteToField(&fieldToWrite, fieldData); err != nil {
-				log.Println(fieldData)
-				log.Println("error writing value to field; ", err)
 				return preProcessedEntity, err
 			}
 		}
