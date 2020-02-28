@@ -12,7 +12,6 @@ import (
 
 	"github.com/navaz-alani/entity/eField"
 	"github.com/navaz-alani/entity/entityErrors"
-	"github.com/navaz-alani/entity/multiplexer/muxHandle"
 	"github.com/navaz-alani/entity/spec"
 )
 
@@ -109,7 +108,7 @@ type Entity struct {
 		PStorage is the collection in which the Entities
 		should be maintained.
 	*/
-	PStorage muxHandle.CollectionHandler
+	PStorage *mongo.Collection
 }
 
 /*

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"reflect"
 
+	"go.mongodb.org/mongo-driver/mongo"
+
 	"github.com/navaz-alani/entity"
 	"github.com/navaz-alani/entity/eField"
 	"github.com/navaz-alani/entity/entityErrors"
@@ -62,7 +64,7 @@ name as the EntityID given.
 To modify the options for the collection, the client can
 use the db pointer used during initialization
 */
-func (em *EMux) Collection(entityID string) muxHandle.CollectionHandler {
+func (em *EMux) Collection(entityID string) *mongo.Collection {
 	return em.Entities[entityID].Entity.PStorage
 }
 
@@ -137,7 +139,7 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EMux, error) {
 		}
 
 		// create collection
-		var defCollection muxHandle.CollectionHandler
+		var defCollection *mongo.Collection
 		if createCollection {
 			defCollection = db.Collection(EntityID)
 		}
@@ -308,7 +310,6 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 					// append new value
 					fieldToWrite.Set(reflect.Append(fieldToWrite, writeValue))
 				}
-				// done with this field
 				continue
 			} else if cf.EmbeddedEntity.SFlag {
 				// convert payload for recursive call
