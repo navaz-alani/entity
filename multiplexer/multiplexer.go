@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"reflect"
 
-	"go.mongodb.org/mongo-driver/mongo"
-
 	"github.com/navaz-alani/entity"
 	"github.com/navaz-alani/entity/eField"
 	"github.com/navaz-alani/entity/entityErrors"
@@ -64,17 +62,17 @@ name as the EntityID given.
 To modify the options for the collection, the client can
 use the db pointer used during initialization
 */
-func (em *EMux) Collection(entityID string) *mongo.Collection {
+func (em *EMux) Collection(entityID string) muxHandle.EntityCollector {
 	return em.Entities[entityID].Entity.PStorage
 }
 
 /*
-E returns the Entity corresponding to the entityID given.
+Entity returns the Entity corresponding to the entityID given.
 
 This Entity can be used normally to carry out CRUD operations
 for instances of the Entity.
 */
-func (em *EMux) E(entityID string) *entity.Entity {
+func (em *EMux) Entity(entityID string) *entity.Entity {
 	if meta := em.Entities[entityID]; meta != nil {
 		return meta.Entity
 	}
@@ -139,17 +137,18 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EMux, error) {
 		}
 
 		// create collection
-		var defCollection *mongo.Collection
+		var defCollection muxHandle.EntityCollector
 		if createCollection {
 			defCollection = db.Collection(EntityID)
 		}
 
-		// create & register entity
+		// create entity
 		defEntity := &entity.Entity{
 			SchemaDefinition: defType,
 			PStorage:         defCollection,
 		}
 
+		// register entity
 		if newMux.Entities[EntityID] == nil {
 			meta := &metaEntity{
 				Entity:               defEntity,
@@ -329,7 +328,7 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 			}
 
 			// set data
-			if err := eField.WriteToField(&fieldToWrite, fieldData); err != nil {
+			if err := eField.WriteToField(fieldToWrite, fieldData); err != nil {
 				return preProcessedEntity, err
 			}
 		}

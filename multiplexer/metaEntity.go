@@ -56,7 +56,6 @@ type (
 		EmbeddedEntity Embedding
 	}
 
-	// TODO: merge CType and SType fields; only 1 can be defined at a time
 	/*
 		Embedding is a type used to store information about a field's
 		data type. It contains flags used to indicate whether the field
@@ -146,15 +145,7 @@ means that the last entity.IDTag will specify the value of the
 entity's mongoDB collection.
 */
 func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensedField) {
-	cFlag, cType := eField.CheckCollectionEmbedding(field)
-	sFlag, sType := eField.CheckStructEmbedding(field)
-
-	var embeddedType reflect.Type
-	if cFlag {
-		embeddedType = cType
-	} else {
-		embeddedType = sType
-	}
+	cFlag, sFlag, embeddedType := eField.CheckEmbedding(field)
 
 	newField := &condensedField{
 		Name:      field.Name,

@@ -15,7 +15,7 @@ entityErrors.InvalidDataType error is returned.
 This function will NEVER write to a eField which stores
 a pointer kind.
 */
-func WriteToField(field *reflect.Value, data interface{}) (err error) {
+func WriteToField(field reflect.Value, data interface{}) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = entityErrors.InvalidDataType
@@ -38,34 +38,30 @@ func WriteToField(field *reflect.Value, data interface{}) (err error) {
 		field.SetFloat(data.(float64))
 	case reflect.Bool:
 		field.SetBool(data.(bool))
+	case reflect.Ptr:
+		return entityErrors.WriteToPtrField
 	}
 
 	return nil
 }
 
 /*
-CheckCollectionEmbedding returns whether the given field's type
-is a collection type (array, slice, ...) as well as the
-type of an element in the collection.
+CheckEmbedding returns values indicating the field's type embedding.
+If the field is of collection kind (slice), the cFlag is set to
+true and the embeddedType is set to the type of a single element
+in that collection.
+If the field is of struct kind, the sFlag is set to true and the
+embeddedType is set to the field's type.
 */
-func CheckCollectionEmbedding(field reflect.StructField) (bool, reflect.Type) {
+func CheckEmbedding(field reflect.StructField) (cFlag, sFlag bool, embeddedType reflect.Type) {
 	switch field.Type.Kind() {
-	default:
-		return false, nil
-	case reflect.Slice, reflect.Array:
-		return true, field.Type.Elem()
-	}
-}
-
-/*
-CheckStructEmbedding returns whether the given field's type is
-of struct kind as well as the struct type stored in the field.
-*/
-func CheckStructEmbedding(field reflect.StructField) (bool, reflect.Type) {
-	switch field.Type.Kind() {
-	default:
-		return false, nil
+	case reflect.Slice:
+		cFlag = true
+		embeddedType = field.Type.Elem()
 	case reflect.Struct:
-		return true, field.Type
+		sFlag = true
+		embeddedType = field.Type
 	}
+
+	return cFlag, sFlag, embeddedType
 }
