@@ -162,7 +162,6 @@ func Create(db muxHandle.DBHandler, definitions ...interface{}) (*EMux, error) {
 			return nil, entityErrors.DuplicateTag(eField.IDTag, defType.Name())
 		}
 
-		// run indexing
 		if EntityID != "" {
 			_ = defEntity.Optimize()
 		}
@@ -240,35 +239,69 @@ func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) htt
 			// Decode the incoming JSON payload
 			var req map[string]interface{}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, "payload decode fail", http.StatusBadRequest)
-				return
-			}
-
-			preProcessedEntity, err := em.createEntity(em.Entities[entityID], req)
-			if err != nil {
-				// JSON pre-processing failed
-				//		TODO: add error in context for inspection purposes
-				next.ServeHTTP(w, r)
+				http.Error(w, "payload decode to json fail", http.StatusBadRequest)
 				return
 			}
 
 			muxCtx := muxContext.Create()
-			_ = muxCtx.Set(meta.EntityID, &preProcessedEntity)
+			reqWithCtx := muxCtx.Embed(r, context.Background())
 
-			reqWithCtx := muxCtx.EmbedCtx(r, context.Background())
-			next.ServeHTTP(w, reqWithCtx)
+			preProcessedEntity, err := em.createEntity(em.Entities[entityID], req)
+			if err != nil {
+				muxCtx.SetError(err.Error())
+			}
+
+			if muxCtx.Error() == nil {
+				_ = muxCtx.Set(meta.EntityID, &preProcessedEntity)
+				next.ServeHTTP(w, reqWithCtx)
+			} else {
+				next.ServeHTTP(w, reqWithCtx)
+
+			}
 		})
 	}
 
 	return handle, nil
 }
 
+/*
+createEntity is a function which parses the given map (representing
+a JSON payload) for the given Entity definition.
+It returns a reflect.Value representing the Entity created, and an error
+which should be nil if all goes well.
+
+If the meta provided is a nil pointer, the returned error will be
+entityErrors.InvalidEntityLink.
+This error is also returned when links to other Entities are not
+initialized.
+If a payload conversion fails, entityErrors.EmbeddedWriteDataInvalid
+is returned as the error.
+
+Implementation
+
+Initially, for the given meta, the following is done for each creation
+field (fields with the CreationFieldsToken in the HandleTag value).
+The field's name (chosen from JSON/BSON/field name - in that priority)
+is used to retrieve an interface{} form the payload to write to the field.
+
+Then, depending on whether the field contains a collection-kind (slice)
+or a struct kind (possibly another Entity), the payload is processed
+recursively to create an Entity for that field. Please note that if a field
+contains an Embedded type (within a collection or as a singleton), that
+Embedded type must be managed by the EMux too.
+This helps keep Entities and coherent modular.
+
+Finally, when recursive pre-processing is done, the obtained value is
+then written to the field. For collections, note that recursion will occur
+as many times as the number of elements in the collection as these have to be
+processed as individual Entities.
+*/
 func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (reflect.Value, error) {
 	var preProcessedEntity reflect.Value
 	var creationFields []*condensedField
 
 	if meta == nil {
-		return reflect.ValueOf(nil), entityErrors.InvalidEntityID
+		return reflect.ValueOf(nil), entityErrors.InvalidEntityLink
 	} else {
 		preProcessedEntity = reflect.New(meta.Entity.SchemaDefinition).Elem()
 		creationFields = meta.FieldClassifications[CreationFieldsToken]
@@ -290,7 +323,8 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 					return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
 				}
 
-				// write each item individually
+				// process and collect entities
+				writePayload := make([]reflect.Value, 0)
 				for i := 0; i < len(writeData); i++ {
 					writeItem := writeData[i]
 
@@ -300,15 +334,16 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 						return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
 					}
 
-					// recursively create entity for field
+					// recursively create embedded entity for field
 					writeValue, err := em.createEntity(cf.EmbeddedEntity.Meta, writeMap)
 					if err != nil {
 						return preProcessedEntity, err
 					}
 
-					// append new value
-					fieldToWrite.Set(reflect.Append(fieldToWrite, writeValue))
+					writePayload = append(writePayload, writeValue)
 				}
+
+				fieldToWrite.Set(reflect.Append(fieldToWrite, writePayload...))
 				continue
 			} else if cf.EmbeddedEntity.SFlag {
 				// convert payload for recursive call
@@ -317,7 +352,7 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 					return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
 				}
 
-				// recursively create entity for field
+				// recursively create embedded entity for field
 				embedValue, err := em.createEntity(cf.EmbeddedEntity.Meta, writeData)
 				if err != nil {
 					return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
