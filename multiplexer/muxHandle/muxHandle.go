@@ -5,6 +5,8 @@ database behaviour required by the multiplexer.
 package muxHandle
 
 import (
+	"context"
+
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -23,4 +25,40 @@ type DBHandler interface {
 		to obtain handles for persistent storage for Entities.
 	*/
 	Collection(name string, opts ...*options.CollectionOptions) *mongo.Collection
+}
+
+type CollectionHandler interface {
+	InsertOne(ctx context.Context, document interface{},
+		opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error)
+	FindOneAndDelete(ctx context.Context, filter interface{},
+		opts ...*options.FindOneAndDeleteOptions) *mongo.SingleResult
+	FindOneAndUpdate(ctx context.Context, filter interface{},
+		update interface{}, opts ...*options.FindOneAndUpdateOptions) *mongo.SingleResult
+	FindOne(ctx context.Context, filter interface{},
+		opts ...*options.FindOneOptions) *mongo.SingleResult
+	Indexes() mongo.IndexView
+}
+
+type Creator interface {
+	InsertOne(ctx context.Context, document interface{},
+		opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error)
+}
+
+type Deleter interface {
+	FindOneAndDelete(ctx context.Context, filter interface{},
+		opts ...*options.FindOneAndDeleteOptions) *mongo.SingleResult
+}
+
+type Editor interface {
+	FindOneAndUpdate(ctx context.Context, filter interface{},
+		update interface{}, opts ...*options.FindOneAndUpdateOptions) *mongo.SingleResult
+}
+
+type Finder interface {
+	FindOne(ctx context.Context, filter interface{},
+		opts ...*options.FindOneOptions) *mongo.SingleResult
+}
+
+type Indexer interface {
+	Indexes() mongo.IndexView
 }
