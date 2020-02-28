@@ -11,6 +11,7 @@ import (
 	"github.com/navaz-alani/entity/entityErrors"
 	"github.com/navaz-alani/entity/multiplexer/muxContext"
 	"github.com/navaz-alani/entity/multiplexer/muxHandle"
+	"github.com/navaz-alani/entity/spec"
 )
 
 type (
@@ -246,7 +247,7 @@ func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) htt
 			muxCtx := muxContext.Create()
 			reqWithCtx := muxCtx.Embed(r, context.Background())
 
-			preProcessedEntity, err := em.createEntity(em.Entities[entityID], req)
+			preProcessedEntity, err := em.processCreation(em.Entities[entityID], req)
 			if err != nil {
 				muxCtx.SetError(err.Error())
 			}
@@ -265,7 +266,7 @@ func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) htt
 }
 
 /*
-createEntity is a function which parses the given map (representing
+processCreation is a function which parses the given map (representing
 a JSON payload) for the given Entity definition.
 It returns a reflect.Value representing the Entity created, and an error
 which should be nil if all goes well.
@@ -296,7 +297,7 @@ then written to the field. For collections, note that recursion will occur
 as many times as the number of elements in the collection as these have to be
 processed as individual Entities.
 */
-func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (reflect.Value, error) {
+func (em *EMux) processCreation(meta *metaEntity, payload map[string]interface{}) (reflect.Value, error) {
 	var preProcessedEntity reflect.Value
 	var creationFields []*condensedField
 
@@ -335,7 +336,7 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 					}
 
 					// recursively create embedded entity for field
-					writeValue, err := em.createEntity(cf.EmbeddedEntity.Meta, writeMap)
+					writeValue, err := em.processCreation(cf.EmbeddedEntity.Meta, writeMap)
 					if err != nil {
 						return preProcessedEntity, err
 					}
@@ -353,7 +354,7 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 				}
 
 				// recursively create embedded entity for field
-				embedValue, err := em.createEntity(cf.EmbeddedEntity.Meta, writeData)
+				embedValue, err := em.processCreation(cf.EmbeddedEntity.Meta, writeData)
 				if err != nil {
 					return preProcessedEntity, entityErrors.EmbeddedWriteDataInvalid
 				}
@@ -370,4 +371,80 @@ func (em *EMux) createEntity(meta *metaEntity, payload map[string]interface{}) (
 	}
 
 	return preProcessedEntity, nil
+}
+
+/*
+EditMiddleware returns middleware which can be used to
+derive a template of an Entity edit operation from an API
+request.
+*/
+func (em *EMux) EditMiddleware(entityID string) (func(next http.Handler) http.Handler, error) {
+	var meta *metaEntity
+	if m := em.Entities[entityID]; m == nil || m.EntityID == "" {
+		return nil, entityErrors.IncompleteEntityMetadata
+	} else {
+		meta = m
+	}
+
+	if len(meta.FieldClassifications[EditFieldsToken]) == 0 {
+		return nil, entityErrors.NoEditFields
+	}
+
+	handle := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Decode the incoming JSON payload
+			var req map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "payload decode to json fail", http.StatusBadRequest)
+				return
+			}
+
+			muxCtx := muxContext.Create()
+			reqWithCtx := muxCtx.Embed(r, context.Background())
+
+			preProcessedEdits, err := em.processEdits(em.Entities[entityID], req)
+			if err != nil {
+				muxCtx.SetError(err.Error())
+			}
+
+			if muxCtx.Error() == nil {
+				_ = muxCtx.Set(meta.EntityID, &preProcessedEdits)
+				next.ServeHTTP(w, reqWithCtx)
+			} else {
+				next.ServeHTTP(w, reqWithCtx)
+
+			}
+		})
+	}
+
+	return handle, nil
+}
+
+/*
+processEdits is a function which returns a slice of pointers
+to spec.ESpec which specify the changes to be made for the
+fields of a certain Entity.
+*/
+func (em *EMux) processEdits(meta *metaEntity, payload map[string]interface{}) ([]*spec.ESpec, error) {
+	preProcessedEdits := make([]*spec.ESpec, 0)
+
+	var deletionFields []*condensedField
+	if meta == nil {
+		return preProcessedEdits, entityErrors.InvalidEntityLink
+	} else {
+		deletionFields = meta.FieldClassifications[DeletionFieldsToken]
+	}
+
+	for _, df := range deletionFields {
+		if targetVal := payload[df.RequestID]; targetVal != nil {
+			edit := &spec.ESpec{
+				Field:  df.Name,
+				Target: targetVal,
+			}
+
+			preProcessedEdits = append(preProcessedEdits, edit)
+		}
+	}
+
+	return preProcessedEdits, nil
 }

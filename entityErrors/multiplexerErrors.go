@@ -18,11 +18,13 @@ var (
 		as a result of undefined tags or tags with empty values.
 	*/
 	IncompleteEntityMetadata = fmt.Errorf("insufficient entity metadata")
-	NoClassificationFields   = fmt.Errorf("no classification fields")
 	InvalidDataType          = fmt.Errorf("data type invalid")
 	InvalidEntityID          = fmt.Errorf("entityID invalid")
 	EmbeddedWriteDataInvalid = fmt.Errorf("embedded write data invalid")
 	InvalidEntityLink        = fmt.Errorf("invalid entity link")
+
+	NoClassificationFields = fmt.Errorf("no classification fields")
+	NoEditFields           = fmt.Errorf("no edit fields")
 )
 
 /*

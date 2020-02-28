@@ -1,7 +1,7 @@
 /*
-Package muxContext defines a simple context that can be used
-with HTTP requests to easily store multiple pieces of information
-within the same http.Request context.
+Package muxContext defines a simple concurrency-safe context that
+can be used with HTTP requests to easily store multiple pieces of
+information within the same http.Request context.
 */
 package muxContext
 
