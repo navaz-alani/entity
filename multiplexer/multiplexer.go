@@ -254,7 +254,7 @@ func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) htt
 			}
 
 			muxCtx := muxContext.Create()
-			_ = muxCtx.Set(meta.EntityID, &preProcessedEntity)
+			_ = muxCtx.Set(meta.EntityID, preProcessedEntity.Interface())
 
 			reqWithCtx := muxCtx.EmbedCtx(r, context.Background())
 			next.ServeHTTP(w, reqWithCtx)
