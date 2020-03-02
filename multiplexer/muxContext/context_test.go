@@ -81,7 +81,7 @@ func TestEMuxContext_RetrieveStructPtr(t *testing.T) {
 func TestIsolateCtxNoCtxInReq(t *testing.T) {
 	req, _ := http.NewRequest("GET", "test.com", TestData{})
 
-	if _, err := IsolateCtx(req); err != entityErrors.MuxCtxNotFound {
+	if _, err := Isolate(req); err != entityErrors.MuxCtxNotFound {
 		t.Fail()
 	}
 }
@@ -90,16 +90,16 @@ func TestIsolateCtxCorruptCtx(t *testing.T) {
 	req, _ := http.NewRequest("GET", "test.com", TestData{})
 	reqWithCtx := req.WithContext(context.WithValue(context.Background(), muxCtxKey, ""))
 
-	if _, err := IsolateCtx(reqWithCtx); err != entityErrors.MuxCtxCorrupt {
+	if _, err := Isolate(reqWithCtx); err != entityErrors.MuxCtxCorrupt {
 		t.Fail()
 	}
 }
 
 func TestEMuxContext_EmbedCtx(t *testing.T) {
 	req, _ := http.NewRequest("GET", "test.com", TestData{})
-	reqWithCtx := mux.EmbedCtx(req, context.TODO())
+	reqWithCtx := mux.Embed(req, context.TODO())
 
-	mux, _ := IsolateCtx(reqWithCtx)
+	mux, _ := Isolate(reqWithCtx)
 	usr := mux.Retrieve(keyStruct).(*TestUser)
 
 	if usr == nil || !reflect.DeepEqual(*usr, *valStruct) {

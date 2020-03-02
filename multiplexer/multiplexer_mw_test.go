@@ -83,7 +83,7 @@ func EntityMux_CreationMiddlewareRequestParseTestHelper(t *testing.T, rt *reqTes
 	}
 
 	verify := func(w http.ResponseWriter, r *http.Request) {
-		muxCtx, err := muxContext.IsolateCtx(r)
+		muxCtx, err := muxContext.Isolate(r)
 		if err != nil {
 			t.Fatal(err)
 		}

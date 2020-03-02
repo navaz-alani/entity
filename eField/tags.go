@@ -28,6 +28,8 @@ const (
 	/*
 		RequireTag is used to tag struct fields which
 		must be defined before a database entry.
+
+		TODO: implement tag
 	*/
 	RequireTag string = "_rq_"
 )

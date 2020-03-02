@@ -1,12 +1,13 @@
 /*
-Package muxContext defines a simple context that can be used
-with HTTP requests to easily store multiple pieces of information
-within the same http.Request context.
+Package muxContext defines a simple concurrency-safe context that
+can be used with HTTP requests to easily store multiple pieces of
+information within the same http.Request context.
 */
 package muxContext
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -31,6 +32,11 @@ type EMuxContext struct {
 	*/
 	payloads map[string]interface{}
 	/*
+		err is used to store information about the results of
+		the pre-processing stage.
+	*/
+	err error
+	/*
 		mutex is used to internally ensure that concurrent
 		read/write operations do not compromise payload data.
 	*/
@@ -38,7 +44,7 @@ type EMuxContext struct {
 }
 
 /*
-Create returns a pointer to an empty EMuxContext.
+Create initializes and returns a pointer to an new EMuxContext.
 */
 func Create() *EMuxContext {
 	payloadMap := make(map[string]interface{})
@@ -73,10 +79,32 @@ func (emc *EMuxContext) Retrieve(key string) interface{} {
 }
 
 /*
-EmbedCtx returns the given request, with its context modified
-to include the given emc.
+SetError sets the error state of emc.
 */
-func (emc *EMuxContext) EmbedCtx(r *http.Request, parentCtx context.Context) *http.Request {
+func (emc *EMuxContext) SetError(msg string) {
+	emc.mutex.Lock()
+	defer emc.mutex.Unlock()
+
+	emc.err = fmt.Errorf(msg)
+}
+
+/*
+Error retrieves the error state of emc.
+*/
+func (emc *EMuxContext) Error() error {
+	emc.mutex.Lock()
+	defer emc.mutex.Unlock()
+
+	return emc.err
+}
+
+/*
+Embed returns the given request, with its context modified
+to include emc. Internally, a pointer to the context is
+stored so emc can be changed after embedding it into the
+request.
+*/
+func (emc *EMuxContext) Embed(r *http.Request, parentCtx context.Context) *http.Request {
 	emc.mutex.Lock()
 	defer emc.mutex.Unlock()
 
@@ -85,7 +113,7 @@ func (emc *EMuxContext) EmbedCtx(r *http.Request, parentCtx context.Context) *ht
 }
 
 /*
-IsolateCtx returns a pointer to the EMuxContext which is stored
+Isolate returns a pointer to the EMuxContext which is stored
 within the context of the given request, and any errors
 associated with the operation.
 
@@ -94,7 +122,7 @@ returned.
 If the context cannot be parsed, entityErrors.MuxCtxCorrupt is
 returned.
 */
-func IsolateCtx(r *http.Request) (*EMuxContext, error) {
+func Isolate(r *http.Request) (*EMuxContext, error) {
 	reqCtxVal := r.Context().Value(muxCtxKey)
 	if reqCtxVal == nil {
 		return nil, entityErrors.MuxCtxNotFound

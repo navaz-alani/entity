@@ -22,7 +22,7 @@ type (
 		*/
 		EntityID string
 		/*
-			FieldClassifications maps a eField classification to
+			FieldClassifications maps a field classification to
 			a slice of pointers to condensedFields.
 		*/
 		FieldClassifications map[rune][]*condensedField
@@ -34,14 +34,14 @@ type (
 	   package.
 	*/
 	condensedField struct {
-		// Name is the eField's eField name.
+		// Name is the field's field name.
 		Name string
-		// Type is the reflection type of the eField.
+		// Type is the reflection type of the field.
 		Type reflect.Type
 		/*
-			RequestID is a string which specifies the eField to
-			expect when parsing JSON for this eField.
-			It can be equal to the Name eField.
+			RequestID is a string which specifies the field to
+			expect when parsing JSON for this field.
+			It can be equal to the Name field.
 		*/
 		RequestID string
 		/*
@@ -56,7 +56,6 @@ type (
 		EmbeddedEntity Embedding
 	}
 
-	// TODO: merge CType and SType fields; only 1 can be defined at a time
 	/*
 		Embedding is a type used to store information about a field's
 		data type. It contains flags used to indicate whether the field
@@ -87,38 +86,54 @@ type (
 )
 
 /*
-   The following constants define the tokens for eField
+   The following constants define the tokens for field
    classifications in a metaEntity. These tokens are to be
    used within the context of the entity.HandleTag.
+
+	Note: "request payload" refers to a JSON payload.
 */
 const (
 	/*
-		EntityIDToken maps to an array containing a
+		EntityIDToken maps to a slice containing a
 		single pointer (or none at all) to a condensedField
 		whose RequestID is the Entity's EntityID. This is
 		used within the creation stage.
 	*/
 	EntityIDToken rune = '*'
 	/*
-		AxisFieldToken maps to an array containing fields which
+		AxisFieldToken maps to a slice containing fields which
 		are tagged as axis fields.
 	*/
 	AxisFieldToken rune = 'a'
 	/*
-		CreationFieldsToken maps to an array containing fields
+		CreationFieldsToken maps to a slice containing fields
 		which were specified to be provided in an http.Request
 		for creating an instance of an Entity.
 	*/
 	CreationFieldsToken rune = 'c'
+	/*
+		DeletionFieldsToken maps to a slice containing fields
+		which were specified to be pre-processed from a delete
+		request's payload.
+	*/
+	DeletionFieldsToken rune = 'd'
+	/*
+		EditFieldsToken maps to a slice containing fields which
+		were specified to be editable from an http.Request.
+	*/
+	EditFieldsToken rune = 'e'
 )
 
 /*
 HandleTokens defines the set of tokens which can be used in
-the entity.HandleTag of a struct eField for classification.
+the entity.HandleTag of a struct field for classification.
 */
 var HandleTokens = []rune{
-	CreationFieldsToken,
-	AxisFieldToken,
+	AxisFieldToken, // uniqueness
+	// operation tokens
+	CreationFieldsToken, // creation
+	DeletionFieldsToken, // deletion
+	EditFieldsToken,     // editing
 }
 
 /*
@@ -136,25 +151,17 @@ func classifyFields(defType reflect.Type) map[rune][]*condensedField {
 }
 
 /*
-classifyHandleTags classifies the given eField by its handle tags.
-For every tag that the eField matches, a pointer to a condensedField
-representation of the given eField is added to the corresponding
-tag's eField array in the given class map.
+classifyHandleTags classifies the given field by its handle tags.
+For every tag that the field matches, a pointer to a condensedField
+representation of the given field is added to the corresponding
+tag's field array in the given class map.
 
 If an entity.IDTag is encountered, the collectionID is reset. This
 means that the last entity.IDTag will specify the value of the
 entity's mongoDB collection.
 */
 func classifyHandleTags(field reflect.StructField, classes map[rune][]*condensedField) {
-	cFlag, cType := eField.CheckCollectionEmbedding(field)
-	sFlag, sType := eField.CheckStructEmbedding(field)
-
-	var embeddedType reflect.Type
-	if cFlag {
-		embeddedType = cType
-	} else {
-		embeddedType = sType
-	}
+	cFlag, sFlag, embeddedType := eField.CheckEmbedding(field)
 
 	newField := &condensedField{
 		Name:      field.Name,
