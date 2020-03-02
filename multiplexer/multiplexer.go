@@ -253,11 +253,10 @@ func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) htt
 			}
 
 			if muxCtx.Error() == nil {
-				_ = muxCtx.Set(meta.EntityID, &preProcessedEntity)
+				_ = muxCtx.Set(meta.EntityID, preProcessedEntity.Interface())
 				next.ServeHTTP(w, reqWithCtx)
 			} else {
 				next.ServeHTTP(w, reqWithCtx)
-
 			}
 		})
 	}

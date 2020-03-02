@@ -87,13 +87,10 @@ func EntityMux_CreationMiddlewareRequestParseTestHelper(t *testing.T, rt *reqTes
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, ok := muxCtx.Retrieve(rt.EntityID).(*reflect.Value)
-		if !ok {
-			t.Fatal("context retrieval fail", data)
-		}
+		data := muxCtx.Retrieve(rt.EntityID)
 
-		if !reflect.DeepEqual(data.Interface(), rt.ExpectedEntity) {
-			log.Print("got:      ", data.Elem().Interface())
+		if !reflect.DeepEqual(data, rt.ExpectedEntity) {
+			log.Print("got:      ", data)
 			log.Print("expected: ", rt.ExpectedEntity)
 			t.Fatal()
 		}
