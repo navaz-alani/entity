@@ -224,7 +224,7 @@ NOTE: This functionality does not yet support embedding of Entity
 types. This can be achieved through linking instead. This is a
 feature which has been planned for implementation.
 */
-func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) http.Handler, error) {
+func (em *EMux) CreationMiddleware(entityID string) (func(next http.HandlerFunc) http.HandlerFunc, error) {
 	var meta *metaEntity
 	if m := em.Entities[entityID]; m == nil || m.EntityID == "" {
 		return nil, entityErrors.IncompleteEntityMetadata
@@ -236,8 +236,8 @@ func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) htt
 		return nil, entityErrors.NoClassificationFields
 	}
 
-	handle := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handle := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
 			// Decode the incoming JSON payload
 			var req map[string]interface{}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -258,7 +258,7 @@ func (em *EMux) CreationMiddleware(entityID string) (func(next http.Handler) htt
 
 			reqWithCtx := muxCtx.EmbedCtx(r, context.Background())
 			next.ServeHTTP(w, reqWithCtx)
-		})
+		}
 	}
 
 	return handle, nil
