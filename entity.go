@@ -1,291 +1,126 @@
 package entity
 
 import (
-	"context"
+	"fmt"
 	"reflect"
-	"time"
-
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-
-	"github.com/navaz-alani/entity/eField"
-	"github.com/navaz-alani/entity/entityErrors"
-	"github.com/navaz-alani/entity/spec"
 )
 
-/*
-TypeOf returns an EntityDefinition which can be used with
-an Entity to define a schema.
-It performs a check to ensure that the entity is of kind
-struct.
-*/
-func TypeOf(entity interface{}) reflect.Type {
-	entityType := reflect.TypeOf(entity)
-	if entityType.Kind() == reflect.Struct {
-		return entityType
-	}
-	return nil
+type Tag struct {
+	Tag      string
+	Required bool
 }
 
-/*
-Filter uses the axis tags in a struct eField to
-create a BSON map which can be used to filter out
-an entity from a collection.
-
-The filter eField is chosen with the following priority:
-BSON tag "_id", Axis tag "true" (then BSON, JSON tags)
-and lastly the eField name.
-
-Note that the eField with the BSON tag "_id" must be of
-type primitive.ObjectID so that comparison succeeds.
-*/
-func Filter(entity interface{}) bson.M {
-	t := reflect.TypeOf(entity)
-	v := reflect.ValueOf(entity)
-
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		filterValue := v.Field(i).Interface()
-
-		if tag := field.Tag.Get(eField.BSONTag); tag == "_id" && filterValue != primitive.NilObjectID {
-			return bson.M{"_id": filterValue}
-		} else if tag := field.Tag.Get(eField.AxisTag); tag == "true" && filterValue != "" {
-			var filterFieldName = eField.NameByPriority(field, eField.PriorityBsonJson)
-			return bson.M{filterFieldName: filterValue}
-		}
-	}
-
-	return nil
+type TagValue struct {
+	// Val is the value of the tag in the entity definition.
+	Val string
+	// Provider is the index of the field which provides
+	// the above value.
+	Provider int
 }
 
-/*
-ToBSON returns a BSON map representing the given entity.
-The given entity is expected to be of struct kind.
-
-When converting, to BSON, eField names are selected with
-the following priority: BSON tag, JSON tag, eField name
-from the struct.
-*/
-func ToBSON(entity interface{}) bson.M {
-	t := reflect.TypeOf(entity)
-	v := reflect.ValueOf(entity)
-
-	bsonEncoding := bson.M{}
-
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		if tag := field.Tag.Get(eField.BSONTag); tag == "_id" {
-			continue
-		}
-
-		var fName = eField.NameByPriority(field, eField.PriorityBsonJson)
-
-		bsonEncoding[fName] = v.Field(i).Interface()
+var (
+	IDTag       = Tag{".id", true}
+	IndexTag    = Tag{".ix", false}
+	ValidateTag = Tag{".va", false}
+	Tags        = []Tag{
+		IDTag,
+		IndexTag,
+		ValidateTag,
 	}
+)
 
-	return bsonEncoding
-}
-
-/*
-Entity is a type which is used to store
-information about a collection of entities. It is
-used to manage Entities and ensure persistence.
-
-The SchemaDefinition eField's contents is used to
-generate a validator for the collection. This is
-done using "validate" tags which allow deeper
-schema specification.
-*/
+// Entity is a parsed version of a struct definition.
 type Entity struct {
-	/*
-		SchemaDefinition is the base type which will be
-		used for this collection.
-	*/
-	SchemaDefinition reflect.Type
-	/*
-		PStorage is the collection in which the Entities
-		should be maintained.
-	*/
-	PStorage *mongo.Collection
+	Definition reflect.Type
+	Specs      map[Tag][]TagValue
+	Validation map[int]Validator
 }
 
-/*
-typeCheck verifies whether the entity can be used with the
-Entity e.
-*/
-func (e *Entity) typeCheck(entity interface{}) bool {
-	return TypeOf(entity) == e.SchemaDefinition
+// ID returns the Entity's identifier, specified by the first
+// value of the IDTag in the definition.
+func (ety *Entity) ID() string { return ety.Specs[IDTag][0].Val }
+
+// NewEntity creates a new Entity from the given struct definition.
+func NewEntity(e interface{}) (*Entity, error) {
+	eDef := reflect.TypeOf(e)
+	// verify that e is indeed a struct
+	if kind := eDef.Kind(); kind != reflect.Struct {
+		return nil, ErrNonStruct
+	}
+	return parseDefinition(eDef)
 }
 
-/*
-Add adds the given entity to the Entity e.
-The given entity is expected to be of struct kind.
-
-This addition represents an actual insertion to the
-underlying database collection pointed at by e.
-
-The added document's database ID is then returned, or
-any entityErrors that occurred.
-*/
-func (e *Entity) Add(entity interface{}) (primitive.ObjectID, error) {
-	nilID := primitive.NilObjectID
-
-	if !e.typeCheck(entity) {
-		return nilID, entityErrors.IncompatibleEntityType
-	}
-
-	dbDoc := ToBSON(entity)
-	if dbDoc == nil || len(dbDoc) == 0 {
-		return nilID, entityErrors.BodyIncomplete
-	}
-
-	// TODO: add check for whether the defined axis fields are unique
-
-	res, err := e.PStorage.InsertOne(context.TODO(), dbDoc)
-	if err != nil {
-		return nilID, err
-	}
-
-	addedID, ok := res.InsertedID.(primitive.ObjectID)
-	if !ok {
-		return nilID, entityErrors.AddedIDParseFail
-	}
-
-	return addedID, nil
-}
-
-/*
-Edit uses the axes of the given entity to find a
-document in the underlying database collection pointed
-at by e and edits it according to the specified spec.
-
-An error is returned which, if all went alright, should
-be expected to be nil.
-*/
-func (e *Entity) Edit(entity interface{}, spec spec.ESpec) error {
-	if !e.typeCheck(entity) {
-		return entityErrors.IncompatibleEntityType
-	}
-
-	filter := Filter(entity)
-	if filter == nil {
-		return entityErrors.UndefinedAxis
-	}
-
-	res := e.PStorage.FindOneAndUpdate(
-		context.TODO(), filter, spec.ToUpdateSpec())
-	return res.Err()
-}
-
-/*
-Exists returns whether the filter produced by the given entity
-matches any documents in the underlying database collection
-pointed at by e.
-If any documents are matched and dest is non-nil, the matched
-document will be decoded into dest, after which the fields can
-be accessed.
-If dest is left nil, the result is not decoded.
-
-An error is also returned which, if all went alright, should
-be expected to be nil.
-*/
-func (e *Entity) Exists(entity, dest interface{}) (bool, error) {
-	if !e.typeCheck(entity) {
-		return false, entityErrors.IncompatibleEntityType
-	}
-
-	filter := Filter(entity)
-	if filter == nil {
-		return false, entityErrors.UndefinedAxis
-	}
-
-	res := e.PStorage.FindOne(context.TODO(), filter)
-	if res.Err() != mongo.ErrNoDocuments {
-		if dest != nil {
-			err := res.Decode(dest)
-			if err != nil {
-				return true, entityErrors.DBDecodeFail
-			}
-
-			return true, nil
+// parseDefinition uses the field tags in the definition provided to
+// compile a profile of the entity.
+func parseDefinition(def reflect.Type) (ety *Entity, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf(r.(string))
 		}
-		return true, nil
+	}()
+	defTags := make(map[Tag][]TagValue)
+
+	fieldCount := def.NumField()
+	// for each tag, iterate over fields to get value of tag
+	for _, tag := range Tags {
+		for i := 0; i < fieldCount; i++ {
+			field := def.Field(i)
+			if val := field.Tag.Get(tag.Tag); val != "" {
+				defTags[tag] = append(defTags[tag], TagValue{
+					Val:      val,
+					Provider: i,
+				})
+			}
+		}
+		if tag.Required && defTags[tag] == nil {
+			return nil, ExpectedTagDef(tag.Tag)
+		}
 	}
-	return false, res.Err()
+
+	compiledEty := &Entity{
+		Definition: def,
+		Specs:      defTags,
+		Validation: make(map[int]Validator),
+	}
+
+	validationTags := defTags[ValidateTag]
+	for _, tag := range validationTags {
+		fieldType := def.Field(tag.Provider).Type.Kind()
+		switch fieldType {
+		case reflect.String:
+			compiledEty.Validation[tag.Provider] = StringValidator(tag.Val)
+		default:
+			panic(fmt.Sprintf("validation for type '%s' not supported", fieldType))
+		}
+	}
+
+	return compiledEty, nil
 }
 
-/*
-Delete deletes the given entity from the underlying database
-collection pointed at by e.
+func (ety *Entity) TypeCheck(e interface{}) bool {
+	return reflect.TypeOf(e) == ety.Definition
+}
 
-It returns an error from the delete operation which, if all
-went well, can be expected to be nil.
-*/
-func (e *Entity) Delete(entity interface{}) error {
-	if !e.typeCheck(entity) {
-		return entityErrors.IncompatibleEntityType
+// Create creates an instance of the entity in the database.
+func (ety *Entity) Create(e interface{}) error {
+	if !ety.TypeCheck(e) {
+		return ErrMismatchedTypes
 	}
 
-	filter := Filter(entity)
-	if filter == nil {
-		return entityErrors.UndefinedAxis
-	}
-
-	res := e.PStorage.FindOneAndDelete(context.TODO(), filter)
-	if res.Err() != nil {
-		return res.Err()
-	}
 	return nil
 }
 
-/*
-Optimize is a function that creates indexes for the axis fields
-in the underlying EntityDefinition type.
-
-Optimize searches for "index" tags in the fields of the type
-underlying the EntityDefinition. A eField with with an "index" tag
-is optimized. The IndexModel entry for this eField has the Key
-corresponding to the BSON/JSON/eField name (in that priority) and
-value corresponding to the "index" tag value if non-empty and
-a default index type of "text".
-*/
-func (e *Entity) Optimize() error {
-	keys := bson.D{}
-
-	for i := 0; i < e.SchemaDefinition.NumField(); i++ {
-		field := e.SchemaDefinition.Field(i)
-
-		// Ignore eField if IndexTag not set
-		indexTag := field.Tag.Get(eField.IndexTag)
-		axisTag := field.Tag.Get(eField.AxisTag)
-		if !(indexTag == "true" && axisTag == "true") {
-			continue
+// Validate tests the fields of e which, in the Entity definition,
+// possessed the validation tag against the Validator generated
+// from that tag. If any of the fields fails, ErrValidation is
+// returned, otherwise the returned error should be nil.
+func (ety *Entity) Validate(e interface{}) error {
+	inputVal := reflect.ValueOf(e)
+	for fIndex, validator := range ety.Validation {
+		fieldToValidate := inputVal.Field(fIndex)
+		if err := validator.Validate(fieldToValidate.Interface()); err != nil {
+			return err
 		}
-
-		var key = eField.NameByPriority(field, eField.PriorityBsonJson)
-
-		var indexType string
-		if !(indexTag == "" || indexTag == "-") {
-			indexType = indexTag
-		} else {
-			// TODO: infer index type from eField type
-			indexType = "text"
-		}
-
-		keys = append(keys, bson.E{Key: key, Value: indexType})
-	}
-
-	if len(keys) == 0 {
-		return nil
-	}
-	index := []mongo.IndexModel{{Keys: keys}}
-
-	opts := options.CreateIndexes().SetMaxTime(3 * time.Second)
-	_, err := e.PStorage.Indexes().CreateMany(context.TODO(), index, opts)
-	if err != nil {
-		return err
 	}
 	return nil
 }
